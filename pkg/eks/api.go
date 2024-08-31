@@ -127,7 +127,6 @@ func NewWithConfigLoader(
 	ctx context.Context,
 	spec *api.ProviderConfig,
 	clusterSpec *api.ClusterConfig,
-	creds *awsv2.Credentials,
 	loader AWSConfigurationLoader,
 ) (*ClusterProvider, error) {
 	return newHelper(ctx, spec, clusterSpec, loader, newAWSProvider)
