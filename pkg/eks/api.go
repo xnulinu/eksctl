@@ -123,7 +123,7 @@ func New(
 	return newHelper(ctx, spec, clusterSpec, &ConfigurationLoader{}, newAWSProvider)
 }
 
-func NewWithLoader(
+func NewWithConfigLoader(
 	ctx context.Context,
 	spec *api.ProviderConfig,
 	clusterSpec *api.ClusterConfig,
