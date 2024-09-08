@@ -120,16 +120,26 @@ func New(
 	spec *api.ProviderConfig,
 	clusterSpec *api.ClusterConfig,
 ) (*ClusterProvider, error) {
-	return newHelper(ctx, spec, clusterSpec, newAWSProvider)
+	return newHelper(ctx, spec, clusterSpec, &ConfigurationLoader{}, newAWSProvider)
+}
+
+func NewWithConfigLoader(
+	ctx context.Context,
+	spec *api.ProviderConfig,
+	clusterSpec *api.ClusterConfig,
+	loader AWSConfigurationLoader,
+) (*ClusterProvider, error) {
+	return newHelper(ctx, spec, clusterSpec, loader, newAWSProvider)
 }
 
 func newHelper(
 	ctx context.Context,
 	spec *api.ProviderConfig,
 	clusterSpec *api.ClusterConfig,
+	loader AWSConfigurationLoader,
 	awsProviderBuilder func(*api.ProviderConfig, AWSConfigurationLoader) (api.ClusterProvider, error),
 ) (*ClusterProvider, error) {
-	provider, err := awsProviderBuilder(spec, &ConfigurationLoader{})
+	provider, err := awsProviderBuilder(spec, loader)
 	if err != nil {
 		return nil, err
 	}
