@@ -20,7 +20,8 @@ type managedEntry struct {
 }
 
 var _ = DescribeTable("Managed AL2", func(e managedEntry) {
-	api.SetManagedNodeGroupDefaults(e.ng, &api.ClusterMeta{Name: "cluster"}, false)
+	err := api.SetManagedNodeGroupDefaults(e.ng, &api.ClusterMeta{Name: "cluster"}, false)
+	Expect(err).NotTo(HaveOccurred())
 	bootstrapper := nodebootstrap.NewManagedAL2Bootstrapper(e.ng)
 	bootstrapper.UserDataMimeBoundary = "//"
 
@@ -87,67 +88,6 @@ set -ex
 B64_CLUSTER_CA=dGVzdAo=
 API_SERVER_URL=https://test.com
 /etc/eks/bootstrap.sh launch-template --b64-cluster-ca $B64_CLUSTER_CA --apiserver-endpoint $API_SERVER_URL
-
---//--
-`,
-	}),
-
-	Entry("EFA enabled", managedEntry{
-		ng: &api.ManagedNodeGroup{
-			NodeGroupBase: &api.NodeGroupBase{
-				Name:       "ng",
-				EFAEnabled: api.Enabled(),
-			},
-		},
-
-		expectedUserData: `MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary=//
-
---//
-Content-Type: text/cloud-boothook
-Content-Type: charset="us-ascii"
-
-cloud-init-per once yum_wget yum install -y wget
-cloud-init-per once wget_efa wget -q --timeout=20 https://s3-us-west-2.amazonaws.com/aws-efa-installer/aws-efa-installer-latest.tar.gz -O /tmp/aws-efa-installer-latest.tar.gz
-
-cloud-init-per once tar_efa tar -xf /tmp/aws-efa-installer-latest.tar.gz -C /tmp
-pushd /tmp/aws-efa-installer
-cloud-init-per once install_efa ./efa_installer.sh -y -g
-pop /tmp/aws-efa-installer
-
-cloud-init-per once efa_info /opt/amazon/efa/bin/fi_info -p efa
-
---//--
-`,
-	}),
-
-	Entry("EFA and SSM enabled", managedEntry{
-		ng: &api.ManagedNodeGroup{
-			NodeGroupBase: &api.NodeGroupBase{
-				Name:       "ng",
-				EFAEnabled: api.Enabled(),
-				SSH: &api.NodeGroupSSH{
-					Allow:     api.Enabled(),
-					EnableSSM: api.Enabled(),
-				},
-			},
-		},
-		expectedUserData: `MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary=//
-
---//
-Content-Type: text/cloud-boothook
-Content-Type: charset="us-ascii"
-
-cloud-init-per once yum_wget yum install -y wget
-cloud-init-per once wget_efa wget -q --timeout=20 https://s3-us-west-2.amazonaws.com/aws-efa-installer/aws-efa-installer-latest.tar.gz -O /tmp/aws-efa-installer-latest.tar.gz
-
-cloud-init-per once tar_efa tar -xf /tmp/aws-efa-installer-latest.tar.gz -C /tmp
-pushd /tmp/aws-efa-installer
-cloud-init-per once install_efa ./efa_installer.sh -y -g
-pop /tmp/aws-efa-installer
-
-cloud-init-per once efa_info /opt/amazon/efa/bin/fi_info -p efa
 
 --//--
 `,

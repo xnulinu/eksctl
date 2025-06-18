@@ -2,9 +2,9 @@ package nodebootstrap
 
 import (
 	"encoding/base64"
+	"fmt"
 
 	toml "github.com/pelletier/go-toml"
-	"github.com/pkg/errors"
 
 	api "github.com/weaveworks/eksctl/pkg/apis/eksctl.io/v1alpha5"
 )
@@ -32,7 +32,7 @@ func (b *ManagedBottlerocket) UserData() (string, error) {
 		"settings": *b.ng.Bottlerocket.Settings,
 	})
 	if err != nil {
-		return "", errors.Wrap(err, "error loading user-provided Bottlerocket settings")
+		return "", fmt.Errorf("error loading user-provided Bottlerocket settings: %w", err)
 	}
 
 	// Check and protect all input key names against TOML's dotted key semantics.
@@ -41,17 +41,18 @@ func (b *ManagedBottlerocket) UserData() (string, error) {
 	if enableAdminContainer := b.ng.Bottlerocket.EnableAdminContainer; enableAdminContainer != nil {
 		const adminContainerEnabledKey = "settings.host-containers.admin.enabled"
 		if settings.Has(adminContainerEnabledKey) {
-			return "", errors.Errorf("cannot set both bottlerocket.enableAdminContainer and %s", adminContainerEnabledKey)
+			return "", fmt.Errorf("cannot set both bottlerocket.enableAdminContainer and %s", adminContainerEnabledKey)
 		}
 		settings.Set(adminContainerEnabledKey, *enableAdminContainer)
 	}
 
-	userData := settings.String()
-	if userData == "" {
-		return "", errors.New("generated unexpected empty TOML user-data from input")
+	// Generate TOML for launch in this NodeGroup.
+	data, err := bottlerocketSettingsTOML(b.clusterConfig, b.ng.NodeGroupBase, settings)
+	if err != nil {
+		return "", err
 	}
 
-	return base64.StdEncoding.EncodeToString([]byte(userData)), nil
+	return base64.StdEncoding.EncodeToString([]byte(data)), nil
 }
 
 // setDerivedSettings configures settings that are derived from top-level nodegroup config
@@ -78,14 +79,14 @@ func validateBottlerocketSettings(kubernetesSettings map[string]interface{}) err
 	clusterBootstrapKeys := []string{"cluster-certificate", "api-server", "cluster-name", "cluster-dns-ip"}
 	for _, k := range clusterBootstrapKeys {
 		if _, ok := kubernetesSettings[k]; ok {
-			return errors.Errorf("cannot set settings.kubernetes.%s; EKS automatically injects cluster bootstrapping fields into user-data", k)
+			return fmt.Errorf("cannot set settings.kubernetes.%s; EKS automatically injects cluster bootstrapping fields into user-data", k)
 		}
 	}
 
 	apiFields := []string{"node-labels", "node-taints"}
 	for _, k := range apiFields {
 		if _, ok := kubernetesSettings[k]; ok {
-			return errors.Errorf("cannot set settings.kubernetes.%s; labels and taints should be set on the managedNodeGroup object", k)
+			return fmt.Errorf("cannot set settings.kubernetes.%s; labels and taints should be set on the managedNodeGroup object", k)
 		}
 	}
 

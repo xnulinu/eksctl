@@ -34,11 +34,23 @@ type Cmd struct {
 // instance of eks.ClusterProvider, it may return an error if configuration
 // is invalid or region is not supported
 func (c *Cmd) NewCtl() (*eks.ClusterProvider, error) {
-	if err := c.InitializeClusterConfig(); err != nil {
-		return nil, err
-	}
 	ctl, err := eks.New(context.TODO(), &c.ProviderConfig, c.ClusterConfig)
 	if err != nil {
+		return nil, err
+	}
+
+	cvm, err := eks.NewClusterVersionsManager(ctl.AWSProvider.EKS())
+	if err != nil {
+		return nil, err
+	}
+
+	version, err := cvm.ResolveClusterVersion(c.ClusterConfig.Metadata.Version)
+	if err != nil {
+		return nil, fmt.Errorf("resolving cluster version: %w", err)
+	}
+	c.ClusterConfig.Metadata.Version = version
+
+	if err := c.InitializeClusterConfig(); err != nil {
 		return nil, err
 	}
 
@@ -69,11 +81,15 @@ func (c *Cmd) InitializeClusterConfig() error {
 		}
 		// defaulting of nodegroup currently depends on validation;
 		// that may change, but at present that's how it's meant to work
-		api.SetNodeGroupDefaults(ng, c.ClusterConfig.Metadata, c.ClusterConfig.IsControlPlaneOnOutposts())
+		if err := api.SetNodeGroupDefaults(ng, c.ClusterConfig.Metadata, c.ClusterConfig.IsControlPlaneOnOutposts()); err != nil {
+			return err
+		}
 	}
 
 	for i, ng := range c.ClusterConfig.ManagedNodeGroups {
-		api.SetManagedNodeGroupDefaults(ng, c.ClusterConfig.Metadata, c.ClusterConfig.IsControlPlaneOnOutposts())
+		if err := api.SetManagedNodeGroupDefaults(ng, c.ClusterConfig.Metadata, c.ClusterConfig.IsControlPlaneOnOutposts()); err != nil {
+			return err
+		}
 		if err := api.ValidateManagedNodeGroup(i, ng); err != nil {
 			return err
 		}
@@ -84,13 +100,13 @@ func (c *Cmd) InitializeClusterConfig() error {
 // NewProviderForExistingCluster is a wrapper for NewCtl that also validates that the cluster exists and is not a
 // registered/connected cluster.
 func (c *Cmd) NewProviderForExistingCluster(ctx context.Context) (*eks.ClusterProvider, error) {
-	return c.NewProviderForExistingClusterHelper(ctx, func(ctl *eks.ClusterProvider, meta *api.ClusterMeta) error {
+	return c.NewProviderForExistingClusterHelper(ctx, func(cvm eks.ClusterVersionsManagerInterface, controlPlaneVersion string, meta *api.ClusterMeta) error {
 		return nil
 	})
 }
 
 // NewProviderForExistingClusterHelper allows formating cluster K8s version to a standard value before doing nodegroup validations and initializations
-func (c *Cmd) NewProviderForExistingClusterHelper(ctx context.Context, standardizeClusterVersionFormat func(ctl *eks.ClusterProvider, meta *api.ClusterMeta) error) (*eks.ClusterProvider, error) {
+func (c *Cmd) NewProviderForExistingClusterHelper(ctx context.Context, standardizeClusterVersionFormat func(cvm eks.ClusterVersionsManagerInterface, controlPlaneVersion string, meta *api.ClusterMeta) error) (*eks.ClusterProvider, error) {
 	clusterProvider, err := eks.New(ctx, &c.ProviderConfig, c.ClusterConfig)
 	if err != nil {
 		return nil, fmt.Errorf("could not create cluster provider from options: %w", err)
@@ -102,7 +118,12 @@ func (c *Cmd) NewProviderForExistingClusterHelper(ctx context.Context, standardi
 		return nil, err
 	}
 
-	if err := standardizeClusterVersionFormat(clusterProvider, c.ClusterConfig.Metadata); err != nil {
+	cvm, err := eks.NewClusterVersionsManager(clusterProvider.AWSProvider.EKS())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := standardizeClusterVersionFormat(cvm, clusterProvider.ControlPlaneVersion(), c.ClusterConfig.Metadata); err != nil {
 		return nil, err
 	}
 

@@ -2,6 +2,7 @@ package v1alpha5
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -10,7 +11,6 @@ import (
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 
 	"github.com/weaveworks/eksctl/pkg/utils"
-	instanceutils "github.com/weaveworks/eksctl/pkg/utils/instance"
 )
 
 const (
@@ -62,6 +62,10 @@ func SetClusterConfigDefaults(cfg *ClusterConfig) {
 	} else if cfg.AccessConfig.AuthenticationMode == "" {
 		cfg.AccessConfig.AuthenticationMode = getDefaultAuthenticationMode(cfg.IsControlPlaneOnOutposts())
 	}
+	if cfg.IsAutoModeEnabled() && cfg.AutoModeConfig.NodePools == nil {
+		defaultNodePools := slices.Clone(AutoModeKnownNodePools)
+		cfg.AutoModeConfig.NodePools = &defaultNodePools
+	}
 
 	if cfg.PrivateCluster == nil {
 		cfg.PrivateCluster = &PrivateCluster{}
@@ -73,6 +77,15 @@ func SetClusterConfigDefaults(cfg *ClusterConfig) {
 
 	if cfg.Karpenter != nil && cfg.Karpenter.CreateServiceAccount == nil {
 		cfg.Karpenter.CreateServiceAccount = Disabled()
+	}
+
+	if cfg.RemoteNetworkConfig != nil {
+		if cfg.RemoteNetworkConfig.IAM == nil {
+			cfg.RemoteNetworkConfig.IAM = &RemoteNodesIAM{}
+		}
+		if cfg.RemoteNetworkConfig.IAM.Provider == nil {
+			cfg.RemoteNetworkConfig.IAM.Provider = &SSMProvider
+		}
 	}
 }
 
@@ -108,9 +121,22 @@ func vpcCNIAddonSpecified(cfg *ClusterConfig) bool {
 }
 
 // SetNodeGroupDefaults will set defaults for a given nodegroup
-func SetNodeGroupDefaults(ng *NodeGroup, meta *ClusterMeta, controlPlaneOnOutposts bool) {
+func SetNodeGroupDefaults(ng *NodeGroup, meta *ClusterMeta, controlPlaneOnOutposts bool) error {
 	setNodeGroupBaseDefaults(ng.NodeGroupBase, meta)
 
+	// Set default AMI family depending on Kubernetes version
+	isAL2EOLVersion, _ := utils.IsMinVersion(AmazonLinux2EOLVersion, meta.Version)
+	if isAL2EOLVersion {
+		// For newer Kubernetes versions, default to AL2023
+		if ng.AMIFamily == "" {
+			ng.AMIFamily = NodeImageFamilyAmazonLinux2023
+		}
+		// Since AL2 isn't supported, throw an error if the user explicitly requested AL2
+		if ng.AMIFamily == NodeImageFamilyAmazonLinux2 {
+			return fmt.Errorf("AmazonLinux2 is not supported for Kubernetes version %s", meta.Version)
+		}
+	}
+	// Default to AL2 for Kubernetes versions prior to AmazonLinux2EOLVersion
 	if ng.AMIFamily == "" {
 		ng.AMIFamily = DefaultNodeImageFamily
 	}
@@ -126,17 +152,29 @@ func SetNodeGroupDefaults(ng *NodeGroup, meta *ClusterMeta, controlPlaneOnOutpos
 	}
 
 	setContainerRuntimeDefault(ng, meta.Version)
+	return nil
 }
 
 // SetManagedNodeGroupDefaults sets default values for a ManagedNodeGroup
-func SetManagedNodeGroupDefaults(ng *ManagedNodeGroup, meta *ClusterMeta, controlPlaneOnOutposts bool) {
+func SetManagedNodeGroupDefaults(ng *ManagedNodeGroup, meta *ClusterMeta, controlPlaneOnOutposts bool) error {
 	setNodeGroupBaseDefaults(ng.NodeGroupBase, meta)
 
 	// When using custom AMIs, we want the user to explicitly specify AMI family.
 	// Thus, we only set up default AMI family when no custom AMI is being used.
-	if ng.AMIFamily == "" && ng.AMI == "" {
-		if isMinVer, _ := utils.IsMinVersion(Version1_30, meta.Version); isMinVer && !instanceutils.IsGPUInstanceType(ng.InstanceType) &&
-			!instanceutils.IsARMGPUInstanceType(ng.InstanceType) {
+	isAL2EOLVersion, _ := utils.IsMinVersion(AmazonLinux2EOLVersion, meta.Version)
+	if ng.AMI == "" && isAL2EOLVersion {
+		// Set default AMI family depending on Kubernetes version
+		// For newer Kubernetes versions, default to AL2023
+		if ng.AMIFamily == "" {
+			ng.AMIFamily = NodeImageFamilyAmazonLinux2023
+		}
+		// Since AL2 isn't supported for this K8s version, throw an error if the user explicitly requested AL2
+		if ng.AMIFamily == NodeImageFamilyAmazonLinux2 {
+			return fmt.Errorf("AmazonLinux2 is not supported for Kubernetes version %s", meta.Version)
+		}
+	} else if ng.AMI == "" && ng.AMIFamily == "" {
+		// AL2023 is the default ami type on EKS managed nodegroups after 1.30.
+		if isMinVer, _ := utils.IsMinVersion(Version1_30, meta.Version); isMinVer {
 			ng.AMIFamily = NodeImageFamilyAmazonLinux2023
 		} else {
 			ng.AMIFamily = NodeImageFamilyAmazonLinux2
@@ -151,6 +189,8 @@ func SetManagedNodeGroupDefaults(ng *ManagedNodeGroup, meta *ClusterMeta, contro
 
 	setVolumeDefaults(ng.NodeGroupBase, controlPlaneOnOutposts, ng.LaunchTemplate)
 	setDefaultsForAdditionalVolumes(ng.NodeGroupBase, controlPlaneOnOutposts)
+
+	return nil
 }
 
 func setNodeGroupBaseDefaults(ng *NodeGroupBase, meta *ClusterMeta) {
@@ -213,6 +253,10 @@ func setVolumeDefaults(ng *NodeGroupBase, controlPlaneOnOutposts bool, template 
 		if ng.VolumeIOPS == nil {
 			ng.VolumeIOPS = aws.Int(DefaultNodeVolumeIO1IOPS)
 		}
+	case NodeVolumeTypeIO2:
+		if ng.VolumeIOPS == nil {
+			ng.VolumeIOPS = aws.Int(DefaultNodeVolumeIO2IOPS)
+		}
 	}
 
 	if ng.AMIFamily == NodeImageFamilyBottlerocket && !IsSetAndNonEmptyString(ng.VolumeName) {
@@ -239,6 +283,9 @@ func setDefaultsForAdditionalVolumes(ng *NodeGroupBase, controlPlaneOnOutposts b
 		}
 		if *av.VolumeType == NodeVolumeTypeIO1 && av.VolumeIOPS == nil {
 			ng.AdditionalVolumes[i].VolumeIOPS = aws.Int(DefaultNodeVolumeIO1IOPS)
+		}
+		if *av.VolumeType == NodeVolumeTypeIO2 && av.VolumeIOPS == nil {
+			ng.AdditionalVolumes[i].VolumeIOPS = aws.Int(DefaultNodeVolumeIO2IOPS)
 		}
 	}
 }

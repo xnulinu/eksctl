@@ -47,7 +47,7 @@ func TestDryRun(t *testing.T) {
 	testutils.RegisterAndRun(t)
 }
 
-const eksVersion = api.LatestVersion
+const eksVersion = api.DefaultVersion
 
 const defaultClusterConfig = `
 apiVersion: eksctl.io/v1alpha5
@@ -105,7 +105,7 @@ nodeGroups:
   volumeType: gp3
 
 managedNodeGroups:
-- amiFamily: AmazonLinux2
+- amiFamily: AmazonLinux2023
   desiredCapacity: 2
   disableIMDSv1: true
   disablePodIMDS: false

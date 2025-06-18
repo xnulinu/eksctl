@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	gfn "github.com/weaveworks/eksctl/pkg/goformation/cloudformation"
+	gfniam "github.com/weaveworks/eksctl/pkg/goformation/cloudformation/iam"
+	gfnt "github.com/weaveworks/eksctl/pkg/goformation/cloudformation/types"
+
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	api "github.com/weaveworks/eksctl/pkg/apis/eksctl.io/v1alpha5"
 	cft "github.com/weaveworks/eksctl/pkg/cfn/template"
-	gfn "github.com/weaveworks/goformation/v4/cloudformation"
-	gfniam "github.com/weaveworks/goformation/v4/cloudformation/iam"
-	gfnt "github.com/weaveworks/goformation/v4/cloudformation/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -160,7 +161,7 @@ func makeManagedPolicies(iamCluster *api.ClusterIAM, iamConfig *api.NodeGroupIAM
 			// The Managed Nodegroup API requires this managed policy to be present, even though
 			// AmazonEC2ContainerRegistryPowerUser (attached if imageBuilder is enabled) contains a superset of the
 			// actions allowed by this managed policy
-			managedPolicyNames.Insert(iamPolicyAmazonEC2ContainerRegistryReadOnly)
+			managedPolicyNames.Insert(iamPolicyAmazonEC2ContainerRegistryPullOnly)
 		}
 		managedPolicyNames.Insert(iamPolicyAmazonSSMManagedInstanceCore)
 	}
@@ -170,7 +171,7 @@ func makeManagedPolicies(iamCluster *api.ClusterIAM, iamConfig *api.NodeGroupIAM
 	} else if !managed {
 		// attach this policy even if `AttachPolicyARNs` is specified to preserve existing behaviour for unmanaged
 		// nodegroups
-		managedPolicyNames.Insert(iamPolicyAmazonEC2ContainerRegistryReadOnly)
+		managedPolicyNames.Insert(iamPolicyAmazonEC2ContainerRegistryPullOnly)
 	}
 
 	if api.IsEnabled(iamConfig.WithAddonPolicies.CloudWatch) {
