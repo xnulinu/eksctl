@@ -1,0 +1,132 @@
+# GitHub Actions workflow to automatically sync eksctl fork with upstream
+#
+# Add this file to your eksctl fork at: .github/workflows/sync-upstream.yml
+#
+# What it does:
+# 1. Runs weekly (Sunday at midnight UTC) and on manual trigger
+# 2. Fetches latest changes from upstream eksctl-io/eksctl
+# 3. Attempts to merge upstream/main into your fork's main branch
+# 4. If successful, pushes directly to main
+# 5. If conflicts, creates a PR for manual resolution
+#
+# Required: Give GitHub Actions write permissions in your fork's settings
+# Settings -> Actions -> General -> Workflow permissions -> Read and write permissions
+
+name: Sync Fork with Upstream
+
+on:
+  schedule:
+    # Run weekly on Sunday at midnight UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    # Allow manual trigger from Actions tab
+    inputs:
+      force_pr:
+        description: 'Force create PR even without conflicts'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/eksctl-io/eksctl.git || true
+          git fetch upstream
+
+      - name: Check for upstream changes
+        id: check_changes
+        run: |
+          UPSTREAM_COMMITS=$(git rev-list HEAD..upstream/main --count)
+          echo "upstream_commits=$UPSTREAM_COMMITS" >> $GITHUB_OUTPUT
+          if [ "$UPSTREAM_COMMITS" -eq "0" ]; then
+            echo "No new commits from upstream"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "Found $UPSTREAM_COMMITS new commits from upstream"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Attempt merge
+        id: merge
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          # Try to merge upstream
+          if git merge upstream/main --no-edit; then
+            echo "merge_success=true" >> $GITHUB_OUTPUT
+            echo "Merge successful!"
+          else
+            echo "merge_success=false" >> $GITHUB_OUTPUT
+            echo "Merge has conflicts, will create PR"
+            git merge --abort
+          fi
+
+      - name: Push if merge successful
+        if: steps.merge.outputs.merge_success == 'true' && inputs.force_pr != 'true'
+        run: |
+          git push origin main
+          echo "### ✅ Fork synced successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "Merged ${{ steps.check_changes.outputs.upstream_commits }} commits from upstream." >> $GITHUB_STEP_SUMMARY
+
+      - name: Create PR if conflicts or forced
+        if: steps.merge.outputs.merge_success == 'false' || inputs.force_pr == 'true'
+        run: |
+          # Create a sync branch
+          BRANCH_NAME="sync-upstream-$(date +%Y%m%d)"
+          git checkout -b $BRANCH_NAME
+
+          # For conflicts, we'll create a branch pointing to upstream
+          # and let the maintainer resolve manually
+          git reset --hard upstream/main
+          git push -u origin $BRANCH_NAME --force
+
+          # Create PR using GitHub CLI
+          gh pr create \
+            --title "🔄 Sync with upstream eksctl $(date +%Y-%m-%d)" \
+            --body "## Automated Upstream Sync
+
+          This PR syncs our fork with the latest changes from [eksctl-io/eksctl](https://github.com/eksctl-io/eksctl).
+
+          ### ⚠️ Action Required
+          This PR was created because automatic merge had conflicts with our custom changes.
+
+          **Please review and resolve conflicts manually:**
+          1. Check that our custom \`NewWithConfigLoader\` changes are preserved
+          2. Ensure the \`AWSConfigurationLoader\` interface changes are intact
+          3. Test locally before merging
+
+          ### What's new from upstream
+          See [eksctl releases](https://github.com/eksctl-io/eksctl/releases) for details.
+
+          ---
+          *This PR was automatically created by the sync workflow.*" \
+            --base main \
+            --head $BRANCH_NAME
+
+          echo "### ⚠️ Manual intervention required!" >> $GITHUB_STEP_SUMMARY
+          echo "Created PR for manual conflict resolution." >> $GITHUB_STEP_SUMMARY
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: No changes summary
+        if: steps.check_changes.outputs.has_changes == 'false'
+        run: |
+          echo "### ℹ️ Fork is already up to date" >> $GITHUB_STEP_SUMMARY
+          echo "No new commits from upstream eksctl." >> $GITHUB_STEP_SUMMARY
