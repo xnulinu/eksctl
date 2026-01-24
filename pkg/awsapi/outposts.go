@@ -52,6 +52,8 @@ type Outposts interface {
 	GetOrder(ctx context.Context, params *outposts.GetOrderInput, optFns ...func(*Options)) (*outposts.GetOrderOutput, error)
 	// Gets information about the specified Outpost.
 	GetOutpost(ctx context.Context, params *outposts.GetOutpostInput, optFns ...func(*Options)) (*outposts.GetOutpostOutput, error)
+	// Gets current and historical billing information about the specified Outpost.
+	GetOutpostBillingInformation(ctx context.Context, params *outposts.GetOutpostBillingInformationInput, optFns ...func(*Options)) (*outposts.GetOutpostBillingInformationOutput, error)
 	// Gets the instance types for the specified Outpost.
 	GetOutpostInstanceTypes(ctx context.Context, params *outposts.GetOutpostInstanceTypesInput, optFns ...func(*Options)) (*outposts.GetOutpostInstanceTypesOutput, error)
 	// Gets the instance types that an Outpost can support in InstanceTypeCapacity .
@@ -123,6 +125,8 @@ type Outposts interface {
 	// [Logging Amazon Web Services Outposts API calls with Amazon Web Services CloudTrail]: https://docs.aws.amazon.com/outposts/latest/userguide/logging-using-cloudtrail.html
 	// [Amazon Web Services managed policies for Amazon Web Services Outposts]: https://docs.aws.amazon.com/outposts/latest/userguide/security-iam-awsmanpol.html
 	StartConnection(ctx context.Context, params *outposts.StartConnectionInput, optFns ...func(*Options)) (*outposts.StartConnectionOutput, error)
+	// Starts the decommission process to return the Outposts racks or servers.
+	StartOutpostDecommission(ctx context.Context, params *outposts.StartOutpostDecommissionInput, optFns ...func(*Options)) (*outposts.StartOutpostDecommissionOutput, error)
 	// Adds tags to the specified resource.
 	TagResource(ctx context.Context, params *outposts.TagResourceInput, optFns ...func(*Options)) (*outposts.TagResourceOutput, error)
 	// Removes tags from the specified resource.

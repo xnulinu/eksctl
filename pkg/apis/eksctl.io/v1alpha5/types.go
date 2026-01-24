@@ -48,11 +48,15 @@ const (
 	Version1_31                  = "1.31"
 	Version1_32                  = "1.32"
 	Version1_33                  = "1.33"
+	Version1_34                  = "1.34"
+	Version1_35                  = "1.35"
 	DockershimDeprecationVersion = Version1_24
 	AmazonLinux2EOLVersion       = Version1_33
+	// EFABuiltInSupportVersion defines the minimum Kubernetes version that supports built-in EFA
+	EFABuiltInSupportVersion = Version1_33
 	//TODO: Remove this and replace with output from DescribeClusterVersions endpoint
 	// DefaultVersion (default)
-	DefaultVersion = Version1_32
+	DefaultVersion = Version1_34
 )
 
 const (
@@ -164,6 +168,9 @@ const (
 	// RegionILCentral1 represents the Israel region Tel Aviv
 	RegionILCentral1 = "il-central-1"
 
+	// RegionILCentral1 represents the Asia Pacific region New Zealand
+	RegionAPSoutheast6 = "ap-southeast-6"
+
 	// RegionUSGovWest1 represents the region GovCloud (US-West)
 	RegionUSGovWest1 = "us-gov-west-1"
 
@@ -175,6 +182,9 @@ const (
 
 	// RegionUSISOBEast1 represents the region US ISOB East (Ohio).
 	RegionUSISOBEast1 = "us-isob-east-1"
+
+	// RegionUSISOBWest1 represents the region US ISOB West.
+	RegionUSISOBWest1 = "us-isob-west-1"
 
 	// RegionUSISOWest1 represents the region US ISO West.
 	RegionUSISOWest1 = "us-iso-west-1"
@@ -199,7 +209,7 @@ const (
 // All valid values of supported families should go in this block
 const (
 	// DefaultNodeImageFamily (default)
-	DefaultNodeImageFamily         = NodeImageFamilyAmazonLinux2
+	DefaultNodeImageFamily         = NodeImageFamilyAmazonLinux2023
 	NodeImageFamilyAmazonLinux2023 = "AmazonLinux2023"
 	NodeImageFamilyAmazonLinux2    = "AmazonLinux2"
 	NodeImageFamilyUbuntuPro2404   = "UbuntuPro2404"
@@ -215,6 +225,9 @@ const (
 
 	NodeImageFamilyWindowsServer2022CoreContainer = "WindowsServer2022CoreContainer"
 	NodeImageFamilyWindowsServer2022FullContainer = "WindowsServer2022FullContainer"
+
+	NodeImageFamilyWindowsServer2025CoreContainer = "WindowsServer2025CoreContainer"
+	NodeImageFamilyWindowsServer2025FullContainer = "WindowsServer2025FullContainer"
 )
 
 // Deprecated `NodeAMIFamily`
@@ -281,6 +294,12 @@ const (
 
 	// AddonNameTag defines the tag of the IAM service account name
 	AddonNameTag = "alpha.eksctl.io/addon-name"
+
+	// CapabilityNameTag defines the tag of the capability name
+	CapabilityNameTag = "alpha.eksctl.io/capability-name"
+
+	// CapabilityIAMRoleTag defines the tag of the capability IAM role
+	CapabilityIAMRoleTag = "alpha.eksctl.io/iam-role-for-capability"
 
 	// ClusterNameLabel defines the tag of the cluster name
 	ClusterNameLabel = "alpha.eksctl.io/cluster-name"
@@ -378,11 +397,17 @@ const (
 	// eksResourceAccountUSISOBEast1 defines the AWS EKS account ID that provides node resources in us-isob-east-1
 	eksResourceAccountUSISOBEast1 = "187977181151"
 
+	// eksResourceAccountUSISOBWest1 defines the AWS EKS account ID that provides node resources in us-isob-west-1
+	eksResourceAccountUSISOBWest1 = "321162350305"
+
 	// eksResourceAccountUSISOWest1 defines the AWS EKS account ID that provides node resources in us-iso-west-1
 	eksResourceAccountUSISOWest1 = "608367168043"
 
 	// eksResourceAccountMXCentral1 defines the AWS EKS account ID that provides node resources in mx-central-1
 	eksResourceAccountMXCentral1 = "730335286997"
+
+	// eksResourceAccountAPSoutheast6 defines the AWS EKS account ID that provides node resources in ap-southeast-6
+	eksResourceAccountAPSoutheast6 = "333609536671"
 
 	// eksResourceAccountUSISOFSouth1 defines the AWS EKS account ID that provides node resources in us-isof-south-1
 	eksResourceAccountUSISOFSouth1 = "676585237158"
@@ -447,6 +472,16 @@ const (
 const (
 	OpenCapacityReservation = "open"
 	NoneCapacityReservation = "none"
+)
+
+// Values for `SupportType`
+const (
+	// SupportTypeStandard standard support for the cluster
+	SupportTypeStandard = "STANDARD"
+	// SupportTypeExtended extended support for the cluster (default)
+	SupportTypeExtended = "EXTENDED"
+	// DefaultSupportType defines the default support type
+	DefaultSupportType = SupportTypeExtended
 )
 
 var (
@@ -536,8 +571,10 @@ func SupportedRegions() []string {
 		RegionUSGovEast1,
 		RegionUSISOEast1,
 		RegionUSISOBEast1,
+		RegionUSISOBWest1,
 		RegionUSISOWest1,
 		RegionMXCentral1,
+		RegionAPSoutheast6,
 		RegionUSISOFSouth1,
 		RegionUSISOFEast1,
 		RegionEUISOEWest1,
@@ -572,6 +609,8 @@ func SupportedAMIFamilies() []string {
 		NodeImageFamilyWindowsServer2019FullContainer,
 		NodeImageFamilyWindowsServer2022CoreContainer,
 		NodeImageFamilyWindowsServer2022FullContainer,
+		NodeImageFamilyWindowsServer2025CoreContainer,
+		NodeImageFamilyWindowsServer2025FullContainer,
 	}
 }
 
@@ -632,10 +671,14 @@ func EKSResourceAccountID(region string) string {
 		return eksResourceAccountUSISOEast1
 	case RegionUSISOBEast1:
 		return eksResourceAccountUSISOBEast1
+	case RegionUSISOBWest1:
+		return eksResourceAccountUSISOBWest1
 	case RegionUSISOWest1:
 		return eksResourceAccountUSISOWest1
 	case RegionMXCentral1:
 		return eksResourceAccountMXCentral1
+	case RegionAPSoutheast6:
+		return eksResourceAccountAPSoutheast6
 	case RegionUSISOFSouth1:
 		return eksResourceAccountUSISOFSouth1
 	case RegionUSISOFEast1:
@@ -670,6 +713,14 @@ type ClusterMeta struct {
 	// Internal fields
 	// AccountID the ID of the account hosting this cluster
 	AccountID string `json:"-"`
+}
+
+// UpgradePolicy holds the upgrade policy configuration for the cluster
+type UpgradePolicy struct {
+	// SupportType specifies the support type for the cluster.
+	// Valid variants are `SupportType` constants
+	// +optional
+	SupportType string `json:"supportType,omitempty"`
 }
 
 // KubernetesNetworkConfig contains cluster networking options
@@ -933,6 +984,10 @@ type ClusterConfig struct {
 	// +required
 	Metadata *ClusterMeta `json:"metadata"`
 
+	// UpgradePolicy specifies the upgrade policy for the cluster
+	// +optional
+	UpgradePolicy *UpgradePolicy `json:"upgradePolicy,omitempty"`
+
 	// +optional
 	KubernetesNetworkConfig *KubernetesNetworkConfig `json:"kubernetesNetworkConfig,omitempty"`
 
@@ -1013,8 +1068,15 @@ type ClusterConfig struct {
 	// +optional
 	Outpost *Outpost `json:"outpost,omitempty"`
 
+	// ControlPlaneScalingConfig specifies control plane scaling configuration.
+	ControlPlaneScalingConfig *ControlPlaneScalingConfig `json:"controlPlaneScalingConfig,omitempty"`
+
 	// ZonalShiftConfig specifies the zonal shift configuration.
 	ZonalShiftConfig *ZonalShiftConfig `json:"zonalShiftConfig,omitempty"`
+
+	// Capabilities specifies the capabilities for the cluster.
+	// +optional
+	Capabilities []Capability `json:"capabilities,omitempty"`
 }
 
 // Outpost holds the Outpost configuration.
@@ -1040,6 +1102,11 @@ func (o *Outpost) SetInstanceType(instanceType string) {
 // HasPlacementGroup reports whether this Outpost has a placement group.
 func (o *Outpost) HasPlacementGroup() bool {
 	return o.ControlPlanePlacement != nil
+}
+
+// ControlPlaneScalingConfig holds control plane scaling configuration.
+type ControlPlaneScalingConfig struct {
+	Tier *string `json:"tier,omitempty"`
 }
 
 // ZonalShiftConfig holds the zonal shift configuration.
@@ -1113,6 +1180,7 @@ func NewClusterConfig() *ClusterConfig {
 		},
 		PrivateCluster: &PrivateCluster{},
 		AccessConfig:   &AccessConfig{},
+		UpgradePolicy:  &UpgradePolicy{},
 	}
 
 	return cfg
@@ -1576,6 +1644,48 @@ type (
 		// Enables the auto repair feature for the nodegroup
 		// +optional
 		Enabled *bool `json:"enabled,omitempty"`
+
+		// MaxUnhealthyNodeThresholdPercentage specifies a percentage threshold of unhealthy nodes, above which node auto
+		// repair actions will stop. When using this, you cannot also set MaxUnhealthyNodeThresholdCount at the same time.
+		// +optional
+		MaxUnhealthyNodeThresholdPercentage *int `json:"maxUnhealthyNodeThresholdPercentage,omitempty"`
+
+		// MaxUnhealthyNodeThresholdCount specifies a count threshold of unhealthy nodes, above which node auto
+		// repair actions will stop. When using this, you cannot also set MaxUnhealthyNodeThresholdPercentage at the same time.
+		// +optional
+		MaxUnhealthyNodeThresholdCount *int `json:"maxUnhealthyNodeThresholdCount,omitempty"`
+
+		// MaxParallelNodesRepairedPercentage specifies the maximum number of nodes that can be repaired concurrently or in parallel,
+		// expressed as a percentage of unhealthy nodes. When using this, you cannot also set MaxParallelNodesRepairedCount at the same time.
+		// +optional
+		MaxParallelNodesRepairedPercentage *int `json:"maxParallelNodesRepairedPercentage,omitempty"`
+
+		// MaxParallelNodesRepairedCount specifies the maximum number of nodes that can be repaired concurrently or in parallel,
+		// expressed as a count of unhealthy nodes. When using this, you cannot also set MaxParallelNodesRepairedPercentage at the same time.
+		// +optional
+		MaxParallelNodesRepairedCount *int `json:"maxParallelNodesRepairedCount,omitempty"`
+
+		// NodeRepairConfigOverrides specifies granular overrides for specific repair actions. These overrides control the
+		// repair action and the repair delay time before a node is considered eligible for repair. If you use this, you must specify all the values.
+		// +optional
+		NodeRepairConfigOverrides []NodeRepairConfigOverride `json:"nodeRepairConfigOverrides,omitempty"`
+	}
+
+	// NodeRepairConfigOverride specifies granular overrides for specific repair actions. These overrides control the
+	// repair action and the repair delay time before a node is considered eligible for repair. If you use this, you must specify all the values.
+	NodeRepairConfigOverride struct {
+		// NodeMonitoringCondition specifies an unhealthy condition reported by the node monitoring agent that this override would apply to
+		NodeMonitoringCondition string `json:"nodeMonitoringCondition"`
+
+		// NodeUnhealthyReason specifies a reason reported by the node monitoring agent that this override would apply to
+		NodeUnhealthyReason string `json:"nodeUnhealthyReason"`
+
+		// MinRepairWaitTimeMins specifies the minimum time in minutes to wait before attempting to repair a node
+		// with this specific NodeMonitoringCondition and NodeUnhealthyReason
+		MinRepairWaitTimeMins int `json:"minRepairWaitTimeMins"`
+
+		// RepairAction specifies the repair action to take for nodes when all of the specified conditions are met
+		RepairAction string `json:"repairAction"`
 	}
 )
 
@@ -1884,8 +1994,8 @@ type ManagedNodeGroup struct {
 }
 
 func (n *NodeGroupBase) GetDesiredCapacity() int {
-	if n.ScalingConfig != nil && n.ScalingConfig.DesiredCapacity != nil {
-		return *n.ScalingConfig.DesiredCapacity
+	if n.ScalingConfig != nil && n.DesiredCapacity != nil {
+		return *n.DesiredCapacity
 	}
 	return 0
 }
@@ -2020,7 +2130,7 @@ type InstanceSelector struct {
 	GPUs *int `json:"gpus,omitempty"`
 	// NeuronDevices specifies the number of Neuron device Accelerators.
 	// It can be set to 0 to select non-Accelerator instance types.
-	NeuronDevices *int32 `json:"neuron_devices,omitempty"`
+	NeuronDevices *int `json:"neuron_devices,omitempty"`
 	// CPU Architecture of the EC2 instance type.
 	// Valid variants are:
 	// `"x86_64"`

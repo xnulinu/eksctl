@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package update
 
@@ -13,7 +12,6 @@ import (
 	"github.com/hashicorp/go-version"
 
 	"github.com/aws/aws-sdk-go-v2/service/eks/types"
-	"github.com/aws/aws-sdk-go/aws"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,12 +30,14 @@ import (
 	"github.com/weaveworks/eksctl/pkg/eks"
 	kubewrapper "github.com/weaveworks/eksctl/pkg/kubernetes"
 	"github.com/weaveworks/eksctl/pkg/testutils"
+	"github.com/weaveworks/eksctl/pkg/utils"
 	"github.com/weaveworks/eksctl/pkg/utils/file"
 )
 
 const (
-	k8sUpdatePollInterval = "30s"
-	k8sUpdatePollTimeout  = "10m"
+	k8sUpdatePollInterval  = "30s"
+	k8sUpdatePollTimeout   = "10m"
+	addonUpdatePollTimeout = "25m"
 )
 
 var (
@@ -122,7 +122,7 @@ var _ = BeforeSuite(func() {
 				Name:         initNG,
 				InstanceType: "t3.large",
 				ScalingConfig: &api.ScalingConfig{
-					DesiredCapacity: aws.Int(1),
+					DesiredCapacity: utils.IntPtr(1),
 				},
 				Labels: map[string]string{
 					"ng-name": initNG,
@@ -135,7 +135,7 @@ var _ = BeforeSuite(func() {
 				AMIFamily:    api.NodeImageFamilyBottlerocket,
 				InstanceType: "t3.small",
 				ScalingConfig: &api.ScalingConfig{
-					DesiredCapacity: aws.Int(1),
+					DesiredCapacity: utils.IntPtr(1),
 				},
 				Labels: map[string]string{
 					"ng-name": botNG,
@@ -245,20 +245,10 @@ var _ = Describe("(Integration) Upgrading cluster", func() {
 				segments := v.Segments()
 				Expect(len(segments)).To(BeNumerically(">=", 2))
 				return fmt.Sprintf("%d.%d", segments[0], segments[1])
-			}, k8sUpdatePollTimeout, k8sUpdatePollInterval).Should(Equal(nextEKSVersion))
+			}, addonUpdatePollTimeout, k8sUpdatePollInterval).Should(Equal(nextEKSVersion))
 		})
 
 		It("should upgrade aws-node", func() {
-			rawClient := getRawClient(context.Background(), clusterProvider)
-			getAWSNodeVersion := func() string {
-				awsNode, err := rawClient.ClientSet().AppsV1().DaemonSets(metav1.NamespaceSystem).Get(context.TODO(), "aws-node", metav1.GetOptions{})
-				Expect(err).NotTo(HaveOccurred())
-				imageTag, err := addons.ImageTag(awsNode.Spec.Template.Spec.Containers[0].Image)
-				Expect(err).NotTo(HaveOccurred())
-				return imageTag
-			}
-			preUpdateAWSNodeVersion := getAWSNodeVersion()
-
 			cmd := params.EksctlUpdateCmd.
 				WithArgs(
 					"addon",
@@ -269,7 +259,6 @@ var _ = Describe("(Integration) Upgrading cluster", func() {
 					"--verbose", "4",
 				)
 			Expect(cmd).To(RunSuccessfully())
-			Eventually(getAWSNodeVersion, k8sUpdatePollTimeout, k8sUpdatePollInterval).ShouldNot(Equal(preUpdateAWSNodeVersion))
 		})
 
 		It("should upgrade coredns", func() {

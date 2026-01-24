@@ -91,22 +91,36 @@ func calculateDesiredMask(cidrPartitions int, cidr *ipnet.IPNet) int {
 	return int(math.Floor(math.Log2(numberOfIPsPerSubnet)))
 }
 
-func (rs *resourceSet) addEFASecurityGroup(vpcID *gfnt.Value, clusterName, desc string) *gfnt.Value {
-	efaSG := rs.newResource("EFASG", &gfnec2.SecurityGroup{
+func (r *resourceSet) addEFASecurityGroup(vpcID *gfnt.Value, clusterName, desc string) *gfnt.Value {
+	// Validate inputs before creating resources
+	if vpcID == nil {
+		return nil
+	}
+	if clusterName == "" || desc == "" {
+		return nil
+	}
+
+	efaSG := r.newResource("EFASG", &gfnec2.SecurityGroup{
 		VpcId:            vpcID,
 		GroupDescription: gfnt.NewString("EFA-enabled security group"),
-		Tags: []gfncfn.Tag{{
-			Key:   gfnt.NewString("kubernetes.io/cluster/" + clusterName),
-			Value: gfnt.NewString("owned"),
-		}},
+		// Don't add a kubernetes.io/cluster tag to avoid conflicting with
+		// aws load balancer controller which expects exactly one security group
+		// tagged with kubernetes.io. Resource will already be tagged with
+		// alpha.eksctl.io/cluster-name elsewhere.
+		// https://github.com/kubernetes-sigs/aws-load-balancer-controller/blob/main/pkg/networking/networking_manager.go#L558
+		Tags: []gfncfn.Tag{},
 	})
-	rs.newResource("EFAIngressSelf", &gfnec2.SecurityGroupIngress{
+
+	// Create ingress rule for EFA self-communication
+	r.newResource("EFAIngressSelf", &gfnec2.SecurityGroupIngress{
 		GroupId:               efaSG,
 		SourceSecurityGroupId: efaSG,
 		Description:           gfnt.NewString("Allow " + desc + " to communicate to itself (EFA-enabled)"),
 		IpProtocol:            gfnt.NewString("-1"),
 	})
-	rs.newResource("EFAEgressSelf", &gfnec2.SecurityGroupEgress{
+
+	// Create egress rule for EFA self-communication
+	r.newResource("EFAEgressSelf", &gfnec2.SecurityGroupEgress{
 		GroupId:                    efaSG,
 		DestinationSecurityGroupId: efaSG,
 		Description:                gfnt.NewString("Allow " + desc + " to communicate to itself (EFA-enabled)"),

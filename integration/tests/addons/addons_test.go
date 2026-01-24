@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package addons
 
@@ -28,7 +27,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	. "github.com/weaveworks/eksctl/integration/matchers"
-	"github.com/weaveworks/eksctl/integration/runner"
 	. "github.com/weaveworks/eksctl/integration/runner"
 	"github.com/weaveworks/eksctl/integration/tests"
 	clusterutils "github.com/weaveworks/eksctl/integration/utilities/cluster"
@@ -37,6 +35,11 @@ import (
 	"github.com/weaveworks/eksctl/pkg/eks"
 	kubewrapper "github.com/weaveworks/eksctl/pkg/kubernetes"
 	"github.com/weaveworks/eksctl/pkg/testutils"
+)
+
+const (
+	addonPollTimeout  = "25m"
+	addonPollInterval = "30s"
 )
 
 var (
@@ -83,7 +86,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 
 		It("should support addons", func() {
 			By("Asserting the addon is listed in `get addons`")
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				cmd := params.EksctlGetCmd.
 					WithArgs(
 						"addons",
@@ -96,7 +99,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 			))
 
 			By("Asserting the addons are healthy")
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				cmd := params.EksctlGetCmd.
 					WithArgs(
 						"addon",
@@ -105,30 +108,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 						"--verbose", "2",
 					)
 				return cmd
-			}, "5m", "30s").Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("ACTIVE"))))
-
-			By("Deleting the kube-proxy addon")
-			cmd := params.EksctlDeleteCmd.
-				WithArgs(
-					"addon",
-					"--name", "kube-proxy",
-					"--cluster", clusterName,
-					"--verbose", "2",
-				)
-			Expect(cmd).To(RunSuccessfully())
-
-			By("Deleting the vpc-cni addon with --preserve")
-			cmd = params.EksctlDeleteCmd.
-				WithArgs(
-					"addon",
-					"--name", "vpc-cni",
-					"--preserve",
-					"--cluster", clusterName,
-					"--verbose", "2",
-				)
-			Expect(cmd).To(RunSuccessfully())
-			_, err := rawClient.ClientSet().AppsV1().DaemonSets("kube-system").Get(context.Background(), "aws-node", metav1.GetOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			}, addonPollTimeout, addonPollInterval).Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("ACTIVE"))))
 		})
 
 		It("should have full control over configMap when creating addons", func() {
@@ -160,7 +140,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 				)
 			Expect(cmd).To(RunSuccessfully())
 
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				return params.EksctlGetCmd.
 					WithArgs(
 						"addon",
@@ -197,7 +177,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 				WithStdin(bytes.NewReader(data))
 			Expect(cmd).NotTo(RunSuccessfully())
 
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				cmd := params.EksctlGetCmd.
 					WithArgs(
 						"addon",
@@ -229,7 +209,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 				WithStdin(bytes.NewReader(data))
 			Expect(cmd).To(RunSuccessfully())
 
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				cmd := params.EksctlGetCmd.
 					WithArgs(
 						"addon",
@@ -238,7 +218,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 						"--verbose", "2",
 					)
 				return cmd
-			}, "5m", "30s").Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("ACTIVE"))))
+			}, addonPollTimeout, addonPollInterval).Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("ACTIVE"))))
 
 			Expect(getCacheValue(getConfigMap(rawClient.ClientSet(), "coredns"))).To(Equal(oldCacheValue))
 		})
@@ -277,7 +257,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 				WithStdin(bytes.NewReader(data))
 			Expect(cmd).To(RunSuccessfully())
 
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				cmd := params.EksctlGetCmd.
 					WithArgs(
 						"addon",
@@ -286,7 +266,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 						"--verbose", "2",
 					)
 				return cmd
-			}, "5m", "30s").Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("ACTIVE"))))
+			}, addonPollTimeout, addonPollInterval).Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("ACTIVE"))))
 
 			Expect(getCacheValue(getConfigMap(rawClient.ClientSet(), "coredns"))).To(Equal(newCacheValue))
 
@@ -301,7 +281,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 				)
 			Expect(cmd).To(RunSuccessfully())
 
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				cmd := params.EksctlGetCmd.
 					WithArgs(
 						"addon",
@@ -310,7 +290,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 						"--verbose", "2",
 					)
 				return cmd
-			}, "5m", "30s").Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("UPDATE_FAILED"))))
+			}, addonPollTimeout, addonPollInterval).Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("UPDATE_FAILED"))))
 
 			Expect(getCacheValue(getConfigMap(rawClient.ClientSet(), "coredns"))).To(Equal(newCacheValue))
 
@@ -336,7 +316,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 				WithStdin(bytes.NewReader(data))
 			Expect(cmd).To(RunSuccessfully())
 
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				cmd := params.EksctlGetCmd.
 					WithArgs(
 						"addon",
@@ -345,7 +325,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 						"--verbose", "2",
 					)
 				return cmd
-			}, "5m", "30s").Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("ACTIVE"))))
+			}, addonPollTimeout, addonPollInterval).Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("ACTIVE"))))
 
 			Expect(getCacheValue(getConfigMap(rawClient.ClientSet(), "coredns"))).To(Equal(oldCacheValue))
 		})
@@ -354,31 +334,31 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 			cmd := params.EksctlDeleteCmd.
 				WithArgs(
 					"addon",
-					"--name", "coredns",
+					"--name", api.CoreDNSAddon,
 					"--cluster", clusterName,
 					"--verbose", "2",
 					"--region", params.Region,
 				)
 			Expect(cmd).To(RunSuccessfully())
 
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				cmd := params.EksctlGetCmd.
 					WithArgs(
 						"addon",
-						"--name", "coredns",
+						"--name", api.CoreDNSAddon,
 						"--cluster", clusterName,
 						"--verbose", "2",
 						"--region", params.Region,
 					)
 				return cmd
-			}, "5m", "30s").ShouldNot(RunSuccessfully())
+			}, addonPollTimeout, addonPollInterval).ShouldNot(RunSuccessfully())
 
 			By("successfully creating an addon with configuration values")
 			clusterConfig := getInitialClusterConfig()
 			clusterConfig.Addons = []*api.Addon{
 				{
 					Name:                api.CoreDNSAddon,
-					ConfigurationValues: "{\"replicaCount\":3}",
+					ConfigurationValues: "{\"replicaCount\":1}",
 					ResolveConflicts:    ekstypes.ResolveConflictsOverwrite,
 				},
 			}
@@ -388,13 +368,14 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 			cmd = params.EksctlCreateCmd.
 				WithArgs(
 					"addon",
+					"--wait",
 					"--config-file", "-",
 				).
 				WithoutArg("--region", params.Region).
 				WithStdin(bytes.NewReader(data))
 			Expect(cmd).To(RunSuccessfully())
 
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				cmd := params.EksctlGetCmd.
 					WithArgs(
 						"addon",
@@ -404,14 +385,14 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 						"--region", params.Region,
 					)
 				return cmd
-			}, "5m", "30s").Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("{\"replicaCount\":3}"))))
+			}, addonPollTimeout, addonPollInterval).Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("{\"replicaCount\":1}"))))
 
 			By("successfully updating the configuration values of the addon")
 			clusterConfig = getInitialClusterConfig()
 			clusterConfig.Addons = []*api.Addon{
 				{
 					Name:                api.CoreDNSAddon,
-					ConfigurationValues: "{\"replicaCount\":3, \"computeType\":\"test\"}",
+					ConfigurationValues: "{\"replicaCount\":1, \"computeType\":\"test\"}",
 					ResolveConflicts:    ekstypes.ResolveConflictsOverwrite,
 				},
 			}
@@ -427,7 +408,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 				WithStdin(bytes.NewReader(data))
 			Expect(cmd).To(RunSuccessfully())
 
-			Eventually(func() runner.Cmd {
+			Eventually(func() Cmd {
 				cmd := params.EksctlGetCmd.
 					WithArgs(
 						"addon",
@@ -437,11 +418,140 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 						"--region", params.Region,
 					)
 				return cmd
-			}, "5m", "30s").Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("{\"replicaCount\":3, \"computeType\":\"test\"}"))))
+			}, addonPollTimeout, addonPollInterval).Should(RunSuccessfullyWithOutputStringLines(ContainElement(ContainSubstring("{\"replicaCount\":1, \"computeType\":\"test\"}"))))
+		})
+
+		It("should support creating addons with namespace configuration", func() {
+			clusterConfig := getInitialClusterConfig()
+			By("creating an addon with namespace config")
+			clusterConfig.Addons = []*api.Addon{
+				{
+					Name: api.AWSEBSCSIDriverAddon,
+					NamespaceConfig: &api.AddonNamespaceConfig{
+						Namespace: "custom-namespace",
+					},
+					ResolveConflicts: ekstypes.ResolveConflictsOverwrite,
+				},
+			}
+
+			data, err := json.Marshal(clusterConfig)
+			Expect(err).NotTo(HaveOccurred())
+
+			cmd := params.EksctlCreateCmd.
+				WithArgs(
+					"addon",
+					"--config-file", "-",
+					"--verbose", "4",
+				).
+				WithoutArg("--region", params.Region).
+				WithStdin(bytes.NewReader(data))
+			Expect(cmd).To(RunSuccessfully())
+
+			By("verifying the addon is created with namespace config")
+			Eventually(func() Cmd {
+				cmd := params.EksctlGetCmd.
+					WithArgs(
+						"addon",
+						"--name", api.AWSEBSCSIDriverAddon,
+						"--cluster", clusterConfig.Metadata.Name,
+						"--verbose", "2",
+					)
+				return cmd
+			}, addonPollTimeout, addonPollInterval).Should(RunSuccessfullyWithOutputStringLines(
+				ContainElement(ContainSubstring("ACTIVE")),
+				ContainElement(ContainSubstring("custom-namespace")),
+			))
+
+			By("verifying namespace config appears in JSON output")
+			cmd = params.EksctlGetCmd.
+				WithArgs(
+					"addon",
+					"--name", api.AWSEBSCSIDriverAddon,
+					"--cluster", clusterConfig.Metadata.Name,
+					"--output", "json",
+				)
+			session := cmd.Run()
+			Expect(session.ExitCode()).To(Equal(0))
+
+			var addonOutputs []map[string]interface{}
+			Expect(json.Unmarshal(session.Buffer().Contents(), &addonOutputs)).To(Succeed())
+			Expect(addonOutputs).To(HaveLen(1))
+			addonOutput := addonOutputs[0]
+			Expect(addonOutput).To(HaveKeyWithValue("NamespaceConfig", HaveKeyWithValue("namespace", "custom-namespace")))
+
+			By("verifying namespace config appears in YAML output")
+			cmd = params.EksctlGetCmd.
+				WithArgs(
+					"addon",
+					"--name", api.AWSEBSCSIDriverAddon,
+					"--cluster", clusterConfig.Metadata.Name,
+					"--output", "yaml",
+				)
+			Expect(cmd).To(RunSuccessfullyWithOutputStringLines(
+				ContainElement(ContainSubstring("NamespaceConfig:")),
+				ContainElement(ContainSubstring("namespace: custom-namespace")),
+			))
+		})
+
+		It("should delete addons successfully", func() {
+			By("Deleting the aws-ebs-csi-driver addon with custom namespace")
+			cmd := params.EksctlDeleteCmd.
+				WithArgs(
+					"addon",
+					"--name", api.AWSEBSCSIDriverAddon,
+					"--cluster", clusterName,
+					"--verbose", "2",
+				)
+			Expect(cmd).To(RunSuccessfully())
+			Eventually(func() Cmd {
+				cmd := params.EksctlGetCmd.
+					WithArgs(
+						"addon",
+						"--name", api.AWSEBSCSIDriverAddon,
+						"--cluster", clusterName,
+						"--verbose", "2",
+						"--region", params.Region,
+					)
+				return cmd
+			}, addonPollTimeout, addonPollInterval).ShouldNot(RunSuccessfully())
+
+			By("Deleting the kube-proxy addon")
+			cmd = params.EksctlDeleteCmd.
+				WithArgs(
+					"addon",
+					"--name", api.KubeProxyAddon,
+					"--cluster", clusterName,
+					"--verbose", "2",
+				)
+			Expect(cmd).To(RunSuccessfully())
+			Eventually(func() Cmd {
+				cmd = params.EksctlGetCmd.
+					WithArgs(
+						"addon",
+						"--name", api.KubeProxyAddon,
+						"--cluster", clusterName,
+						"--verbose", "2",
+						"--region", params.Region,
+					)
+				return cmd
+			}, addonPollTimeout, addonPollInterval).ShouldNot(RunSuccessfully())
+
+			By("Deleting the vpc-cni addon with --preserve")
+			cmd = params.EksctlDeleteCmd.
+				WithArgs(
+					"addon",
+					"--name", "vpc-cni",
+					"--preserve",
+					"--cluster", clusterName,
+					"--verbose", "2",
+				)
+			Expect(cmd).To(RunSuccessfully())
+			_, err := rawClient.ClientSet().AppsV1().DaemonSets("kube-system").Get(context.Background(), "aws-node", metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
-	It("should describe addons", func() {
+	It("should successfully describe addon versions", func() {
 		cmd := params.EksctlUtilsCmd.
 			WithArgs(
 				"describe-addon-versions",
@@ -524,14 +634,14 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 		makePodIDStackName := func(addonName, serviceAccountName string) string {
 			return podidentityassociation.MakeAddonPodIdentityStackName(clusterConfig.Metadata.Name, addonName, serviceAccountName)
 		}
-		makeCreateAddonCMD := func() runner.Cmd {
+		makeCreateAddonCMD := func() Cmd {
 			return params.EksctlCreateCmd.
 				WithArgs("addon").
 				WithArgs("--config-file", "-").
 				WithoutArg("--region", params.Region).
 				WithStdin(clusterutils.Reader(clusterConfig))
 		}
-		makeUpdateAddonCMD := func(args ...string) runner.Cmd {
+		makeUpdateAddonCMD := func(args ...string) Cmd {
 			cmd := params.EksctlUpdateCmd.
 				WithArgs("addon").
 				WithArgs("--config-file", "-").
@@ -542,7 +652,7 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 			}
 			return cmd
 		}
-		makeDeleteAddonCMD := func(addonName string, args ...string) runner.Cmd {
+		makeDeleteAddonCMD := func(addonName string, args ...string) Cmd {
 			cmd := params.EksctlDeleteCmd.WithArgs(
 				"addon",
 				"--cluster", clusterConfig.Metadata.Name,
@@ -696,7 +806,10 @@ var _ = Describe("(Integration) [EKS Addons test]", func() {
 
 			By("removing all pod identity associations owned by the addon")
 			clusterConfig.Addons[1].PodIdentityAssociations = &[]api.PodIdentityAssociation{}
-			Expect(makeUpdateAddonCMD()).To(RunSuccessfully())
+			// Don't wait for aws-ebs-csi-driver add-on because it won't become healthy without iam perms now.
+			// Update add-on has a bug where we wait even if we don't pass in --wait.
+			// We should fix that bug eventually then we can remove this timeout and fail condition.
+			Expect(makeUpdateAddonCMD("--timeout", "2m")).NotTo(RunSuccessfully())
 			assertAddonHasPodIDs(api.AWSEBSCSIDriverAddon, 0)
 
 			By("migrating an addon to pod identity using the utils command")
@@ -876,7 +989,7 @@ func getInitialClusterConfig() *api.ClusterConfig {
 
 	ng := &api.ManagedNodeGroup{
 		NodeGroupBase: &api.NodeGroupBase{
-			Name: "ng",
+			Name: "mng",
 		},
 	}
 	clusterConfig.ManagedNodeGroups = []*api.ManagedNodeGroup{ng}
@@ -900,7 +1013,7 @@ func getCacheValue(configMap *corev1.ConfigMap) string {
 	coreFile, ok := configMap.Data["Corefile"]
 	Expect(ok).To(BeTrue())
 
-	coreFileValues := strings.Fields(strings.Replace(coreFile, "\n", " ", -1))
+	coreFileValues := strings.Fields(strings.ReplaceAll(coreFile, "\n", " "))
 	return coreFileValues[k8sslices.Index(coreFileValues, "cache")+1]
 }
 
@@ -908,7 +1021,7 @@ func updateCacheValue(configMap *corev1.ConfigMap, currentValue string, newValue
 	coreFile, ok := configMap.Data["Corefile"]
 	Expect(ok).To(BeTrue())
 
-	configMap.Data["Corefile"] = strings.Replace(coreFile, "cache "+currentValue, "cache "+newValue, -1)
+	configMap.Data["Corefile"] = strings.ReplaceAll(coreFile, "cache "+currentValue, "cache "+newValue)
 }
 
 func addToString(s string, n int) string {

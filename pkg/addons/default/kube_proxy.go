@@ -18,6 +18,7 @@ import (
 
 	"github.com/weaveworks/eksctl/pkg/kubernetes"
 	"github.com/weaveworks/eksctl/pkg/printers"
+	eksctlversion "github.com/weaveworks/eksctl/pkg/utils/version"
 )
 
 const (
@@ -42,7 +43,7 @@ func UpdateKubeProxy(ctx context.Context, input AddonInput, plan bool) (bool, er
 		logger.Info("missing arm64 nodeSelector value")
 	}
 
-	if numContainers := len(d.Spec.Template.Spec.Containers); !(numContainers >= 1) {
+	if numContainers := len(d.Spec.Template.Spec.Containers); numContainers < 1 {
 		return false, fmt.Errorf("%s has %d containers, expected at least 1", KubeProxy, numContainers)
 	}
 
@@ -115,39 +116,13 @@ func addArm64NodeSelector(daemonSet *v1.DaemonSet) error {
 }
 
 func getLatestKubeProxyImage(ctx context.Context, input AddonInput) (string, error) {
-	defaultClusterVersion := generateImageVersionFromClusterVersion(input.ControlPlaneVersion)
+	// Always use the latest version from managed addon versions
 	latestEKSReportedVersion, err := getLatestImageVersionFromEKS(ctx, input.AddonVersionDescriber, input.ControlPlaneVersion)
 	if err != nil {
 		return "", err
 	}
 
-	// Sometimes the EKS API is ahead, sometimes behind. Pick whichever is latest
-	eksVersionIsGreaterThanDefaultVersion, err := versionGreaterThan(latestEKSReportedVersion, defaultClusterVersion)
-	if err != nil {
-		return "", err
-	}
-
-	if eksVersionIsGreaterThanDefaultVersion {
-		return latestEKSReportedVersion, nil
-	}
-
-	return defaultClusterVersion, nil
-}
-
-func versionGreaterThan(v1, v2 string) (bool, error) {
-	v1Version, err := parseVersion(v1)
-	if err != nil {
-		return false, err
-	}
-	v2Version, err := parseVersion(v2)
-	if err != nil {
-		return false, err
-	}
-	return v1Version.GreaterThan(v2Version), nil
-}
-
-func generateImageVersionFromClusterVersion(controlPlaneVersion string) string {
-	return fmt.Sprintf("v%s-eksbuild.1", controlPlaneVersion)
+	return latestEKSReportedVersion, nil
 }
 
 func getLatestImageVersionFromEKS(ctx context.Context, addonDescriber AddonVersionDescriber, controlPlaneVersion string) (string, error) {
@@ -183,14 +158,23 @@ func getLatestImageVersionFromEKS(ctx context.Context, addonDescriber AddonVersi
 		return versions[j].LessThan(versions[i])
 	})
 
-	return toMinimalVersion(versions[0]), nil
+	return toMinimalVersion(versions[0], controlPlaneMajorMinor)
 }
 
-func toMinimalVersion(v *version.Version) string {
+func toMinimalVersion(v *version.Version, controlPlaneMajorMinor string) (string, error) {
 	preRelease := v.Prerelease()
 	if preRelease == "" {
-		return v.Original()
+		return v.Original(), nil
 	}
+	// Kube-proxy stopped publishing minimal versions after 1.34+.
+	supported, err := eksctlversion.IsMinVersion("1.34", controlPlaneMajorMinor)
+	if err != nil {
+		return "", err
+	}
+	if supported {
+		return v.Original(), nil
+	}
+
 	const versionPrefix = "v"
 	var tagPrefix string
 	if strings.HasPrefix(v.Original(), versionPrefix) {
@@ -198,7 +182,7 @@ func toMinimalVersion(v *version.Version) string {
 	}
 
 	minimalBuildTag := fmt.Sprintf("%s%s-minimal-%s", tagPrefix, v.Core(), preRelease)
-	return minimalBuildTag
+	return minimalBuildTag, nil
 }
 
 func versionWithOnlyMajorAndMinor(v string) (string, error) {

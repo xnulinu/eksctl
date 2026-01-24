@@ -63,6 +63,22 @@ type EKS interface {
 	//
 	// [Amazon EKS add-ons]: https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html
 	CreateAddon(ctx context.Context, params *eks.CreateAddonInput, optFns ...func(*Options)) (*eks.CreateAddonOutput, error)
+	// Creates a managed capability resource for an Amazon EKS cluster.
+	//
+	// Capabilities provide fully managed capabilities to build and scale with
+	// Kubernetes. When you create a capability, Amazon EKSprovisions and manages the
+	// infrastructure required to run the capability outside of your cluster. This
+	// approach reduces operational overhead and preserves cluster resources.
+	//
+	// You can only create one Capability of each type on a given Amazon EKS cluster.
+	// Valid types are Argo CD for declarative GitOps deployment, Amazon Web Services
+	// Controllers for Kubernetes (ACK) for resource management, and Kube Resource
+	// Orchestrator (KRO) for Kubernetes custom resource orchestration.
+	//
+	// For more information, see [EKS Capabilities] in the Amazon EKS User Guide.
+	//
+	// [EKS Capabilities]: https://docs.aws.amazon.com/eks/latest/userguide/capabilities.html
+	CreateCapability(ctx context.Context, params *eks.CreateCapabilityInput, optFns ...func(*Options)) (*eks.CreateCapabilityOutput, error)
 	// Creates an Amazon EKS control plane.
 	//
 	// The Amazon EKS control plane consists of control plane instances that run the
@@ -72,10 +88,10 @@ type EKS interface {
 	// single tenant and unique. It runs on its own set of Amazon EC2 instances.
 	//
 	// The cluster control plane is provisioned across multiple Availability Zones and
-	// fronted by an Elastic Load Balancing Network Load Balancer. Amazon EKS also
-	// provisions elastic network interfaces in your VPC subnets to provide
-	// connectivity from the control plane instances to the nodes (for example, to
-	// support kubectl exec , logs , and proxy data flows).
+	// fronted by an ELB Network Load Balancer. Amazon EKS also provisions elastic
+	// network interfaces in your VPC subnets to provide connectivity from the control
+	// plane instances to the nodes (for example, to support kubectl exec , logs , and
+	// proxy data flows).
 	//
 	// Amazon EKS nodes run in your Amazon Web Services account and connect to your
 	// cluster's control plane over the Kubernetes API server endpoint and a
@@ -84,7 +100,9 @@ type EKS interface {
 	// You can use the endpointPublicAccess and endpointPrivateAccess parameters to
 	// enable or disable public and private access to your cluster's Kubernetes API
 	// server endpoint. By default, public access is enabled, and private access is
-	// disabled. For more information, see [Amazon EKS Cluster Endpoint Access Control]in the Amazon EKS User Guide .
+	// disabled. The endpoint domain name and IP address family depends on the value of
+	// the ipFamily for the cluster. For more information, see [Amazon EKS Cluster Endpoint Access Control] in the Amazon EKS User
+	// Guide .
 	//
 	// You can use the logging parameter to enable or disable exporting the Kubernetes
 	// control plane logs for your cluster to CloudWatch Logs. By default, cluster
@@ -158,9 +176,9 @@ type EKS interface {
 	// node group was created. You can update the launch template version with
 	// necessary changes. For more information about using launch templates, see [Customizing managed nodes with launch templates].
 	//
-	// An Amazon EKS managed node group is an Amazon EC2 Auto Scaling group and
-	// associated Amazon EC2 instances that are managed by Amazon Web Services for an
-	// Amazon EKS cluster. For more information, see [Managed node groups]in the Amazon EKS User Guide.
+	// An Amazon EKS managed node group is an Amazon EC2 Amazon EC2 Auto Scaling group
+	// and associated Amazon EC2 instances that are managed by Amazon Web Services for
+	// an Amazon EKS cluster. For more information, see [Managed node groups]in the Amazon EKS User Guide.
 	//
 	// Windows AMI types are only supported for commercial Amazon Web Services Regions
 	// that support Windows on Amazon EKS.
@@ -170,20 +188,36 @@ type EKS interface {
 	CreateNodegroup(ctx context.Context, params *eks.CreateNodegroupInput, optFns ...func(*Options)) (*eks.CreateNodegroupOutput, error)
 	// Creates an EKS Pod Identity association between a service account in an Amazon
 	// EKS cluster and an IAM role with EKS Pod Identity. Use EKS Pod Identity to give
-	// temporary IAM credentials to pods and the credentials are rotated automatically.
+	// temporary IAM credentials to Pods and the credentials are rotated automatically.
 	//
 	// Amazon EKS Pod Identity associations provide the ability to manage credentials
 	// for your applications, similar to the way that Amazon EC2 instance profiles
 	// provide credentials to Amazon EC2 instances.
 	//
-	// If a pod uses a service account that has an association, Amazon EKS sets
-	// environment variables in the containers of the pod. The environment variables
+	// If a Pod uses a service account that has an association, Amazon EKS sets
+	// environment variables in the containers of the Pod. The environment variables
 	// configure the Amazon Web Services SDKs, including the Command Line Interface, to
 	// use the EKS Pod Identity credentials.
 	//
-	// Pod Identity is a simpler method than IAM roles for service accounts, as this
-	// method doesn't use OIDC identity providers. Additionally, you can configure a
-	// role for Pod Identity once, and reuse it across clusters.
+	// EKS Pod Identity is a simpler method than IAM roles for service accounts, as
+	// this method doesn't use OIDC identity providers. Additionally, you can configure
+	// a role for EKS Pod Identity once, and reuse it across clusters.
+	//
+	// Similar to Amazon Web Services IAM behavior, EKS Pod Identity associations are
+	// eventually consistent, and may take several seconds to be effective after the
+	// initial API call returns successfully. You must design your applications to
+	// account for these potential delays. We recommend that you don’t include
+	// association create/updates in the critical, high-availability code paths of your
+	// application. Instead, make changes in a separate initialization or setup routine
+	// that you run less frequently.
+	//
+	// You can set a target IAM role in the same or a different account for advanced
+	// scenarios. With a target role, EKS Pod Identity automatically performs two role
+	// assumptions in sequence: first assuming the role in the association that is in
+	// this account, then using those credentials to assume the target IAM role. This
+	// process provides your Pod with temporary credentials that have the permissions
+	// defined in the target role, allowing secure access to resources in another
+	// Amazon Web Services account.
 	CreatePodIdentityAssociation(ctx context.Context, params *eks.CreatePodIdentityAssociationInput, optFns ...func(*Options)) (*eks.CreatePodIdentityAssociationOutput, error)
 	// Deletes an access entry.
 	//
@@ -196,6 +230,16 @@ type EKS interface {
 	// When you remove an add-on, it's deleted from the cluster. You can always
 	// manually start an add-on on the cluster using the Kubernetes API.
 	DeleteAddon(ctx context.Context, params *eks.DeleteAddonInput, optFns ...func(*Options)) (*eks.DeleteAddonOutput, error)
+	// Deletes a managed capability from your Amazon EKS cluster. When you delete a
+	// capability, Amazon EKS removes the capability infrastructure but retains all
+	// resources that were managed by the capability.
+	//
+	// Before deleting a capability, you should delete all Kubernetes resources that
+	// were created by the capability. After the capability is deleted, these resources
+	// become difficult to manage because the controller that managed them is no longer
+	// available. To delete resources before removing the capability, use kubectl
+	// delete or remove them through your GitOps workflow.
+	DeleteCapability(ctx context.Context, params *eks.DeleteCapabilityInput, optFns ...func(*Options)) (*eks.DeleteCapabilityOutput, error)
 	// Deletes an Amazon EKS cluster control plane.
 	//
 	// If you have active services in your cluster that are associated with a load
@@ -255,6 +299,10 @@ type EKS interface {
 	// Information such as the Kubernetes versions that you can use the add-on with,
 	// the owner , publisher , and the type of the add-on are returned.
 	DescribeAddonVersions(ctx context.Context, params *eks.DescribeAddonVersionsInput, optFns ...func(*Options)) (*eks.DescribeAddonVersionsOutput, error)
+	// Returns detailed information about a specific managed capability in your Amazon
+	// EKS cluster, including its current status, configuration, health information,
+	// and any issues that may be affecting its operation.
+	DescribeCapability(ctx context.Context, params *eks.DescribeCapabilityInput, optFns ...func(*Options)) (*eks.DescribeCapabilityOutput, error)
 	// Describes an Amazon EKS cluster.
 	//
 	// The API server endpoint and certificate authority data returned by this
@@ -276,6 +324,8 @@ type EKS interface {
 	DescribeIdentityProviderConfig(ctx context.Context, params *eks.DescribeIdentityProviderConfigInput, optFns ...func(*Options)) (*eks.DescribeIdentityProviderConfigOutput, error)
 	// Returns details about an insight that you specify using its ID.
 	DescribeInsight(ctx context.Context, params *eks.DescribeInsightInput, optFns ...func(*Options)) (*eks.DescribeInsightOutput, error)
+	// Returns the status of the latest on-demand cluster insights refresh operation.
+	DescribeInsightsRefresh(ctx context.Context, params *eks.DescribeInsightsRefreshInput, optFns ...func(*Options)) (*eks.DescribeInsightsRefreshOutput, error)
 	// Describes a managed node group.
 	DescribeNodegroup(ctx context.Context, params *eks.DescribeNodegroupInput, optFns ...func(*Options)) (*eks.DescribeNodegroupOutput, error)
 	// Returns descriptive information about an EKS Pod Identity association.
@@ -307,6 +357,9 @@ type EKS interface {
 	ListAddons(ctx context.Context, params *eks.ListAddonsInput, optFns ...func(*Options)) (*eks.ListAddonsOutput, error)
 	// Lists the access policies associated with an access entry.
 	ListAssociatedAccessPolicies(ctx context.Context, params *eks.ListAssociatedAccessPoliciesInput, optFns ...func(*Options)) (*eks.ListAssociatedAccessPoliciesOutput, error)
+	// Lists all managed capabilities in your Amazon EKS cluster. You can use this
+	// operation to get an overview of all capabilities and their current status.
+	ListCapabilities(ctx context.Context, params *eks.ListCapabilitiesInput, optFns ...func(*Options)) (*eks.ListCapabilitiesOutput, error)
 	// Lists the Amazon EKS clusters in your Amazon Web Services account in the
 	// specified Amazon Web Services Region.
 	ListClusters(ctx context.Context, params *eks.ListClustersInput, optFns ...func(*Options)) (*eks.ListClustersOutput, error)
@@ -363,6 +416,9 @@ type EKS interface {
 	// [RegisterClusterRequest]: https://docs.aws.amazon.com/eks/latest/APIReference/API_RegisterClusterRequest.html
 	// [Manifest]: https://amazon-eks.s3.us-west-2.amazonaws.com/eks-connector/manifests/eks-connector/latest/eks-connector.yaml
 	RegisterCluster(ctx context.Context, params *eks.RegisterClusterInput, optFns ...func(*Options)) (*eks.RegisterClusterOutput, error)
+	// Initiates an on-demand refresh operation for cluster insights, getting the
+	// latest analysis outside of the standard refresh schedule.
+	StartInsightsRefresh(ctx context.Context, params *eks.StartInsightsRefreshInput, optFns ...func(*Options)) (*eks.StartInsightsRefreshOutput, error)
 	// Associates the specified tags to an Amazon EKS resource with the specified
 	// resourceArn . If existing tags on a resource are not specified in the request
 	// parameters, they aren't changed. When a resource is deleted, the tags associated
@@ -377,6 +433,14 @@ type EKS interface {
 	UpdateAccessEntry(ctx context.Context, params *eks.UpdateAccessEntryInput, optFns ...func(*Options)) (*eks.UpdateAccessEntryOutput, error)
 	// Updates an Amazon EKS add-on.
 	UpdateAddon(ctx context.Context, params *eks.UpdateAddonInput, optFns ...func(*Options)) (*eks.UpdateAddonOutput, error)
+	// Updates the configuration of a managed capability in your Amazon EKS cluster.
+	// You can update the IAM role, configuration settings, and delete propagation
+	// policy for a capability.
+	//
+	// When you update a capability, Amazon EKS applies the changes and may restart
+	// capability components as needed. The capability remains available during the
+	// update process, but some operations may be temporarily unavailable.
+	UpdateCapability(ctx context.Context, params *eks.UpdateCapabilityInput, optFns ...func(*Options)) (*eks.UpdateCapabilityOutput, error)
 	// Updates an Amazon EKS cluster configuration. Your cluster continues to function
 	// during the update. The response output includes an update ID that you can use to
 	// track the status of your cluster update with DescribeUpdate .
@@ -394,7 +458,7 @@ type EKS interface {
 	//
 	//	- You can also use this API operation to enable or disable public and private
 	//	access to your cluster's Kubernetes API server endpoint. By default, public
-	//	access is enabled, and private access is disabled. For more information, see [Amazon EKS cluster endpoint access control]
+	//	access is enabled, and private access is disabled. For more information, see [Cluster API server endpoint]
 	//	in the Amazon EKS User Guide .
 	//
 	//	- You can also use this API operation to choose different subnets and
@@ -421,9 +485,9 @@ type EKS interface {
 	//
 	// [Amazon EKS Cluster control plane logs]: https://docs.aws.amazon.com/eks/latest/userguide/control-plane-logs.html
 	//
+	// [Cluster API server endpoint]: https://docs.aws.amazon.com/eks/latest/userguide/cluster-endpoint.html
 	// [CloudWatch Pricing]: http://aws.amazon.com/cloudwatch/pricing/
 	// [https://docs.aws.amazon.com/eks/latest/userguide/network_reqs.html]: https://docs.aws.amazon.com/eks/latest/userguide/network_reqs.html
-	// [Amazon EKS cluster endpoint access control]: https://docs.aws.amazon.com/eks/latest/userguide/cluster-endpoint.html
 	UpdateClusterConfig(ctx context.Context, params *eks.UpdateClusterConfigInput, optFns ...func(*Options)) (*eks.UpdateClusterConfigOutput, error)
 	// Updates an Amazon EKS cluster to the specified Kubernetes version. Your cluster
 	// continues to function during the update. The response output includes an update
@@ -485,10 +549,28 @@ type EKS interface {
 	// [Amazon EKS optimized Amazon Linux AMI versions]: https://docs.aws.amazon.com/eks/latest/userguide/eks-linux-ami-versions.html
 	// [Amazon EKS optimized Windows AMI versions]: https://docs.aws.amazon.com/eks/latest/userguide/eks-ami-versions-windows.html
 	UpdateNodegroupVersion(ctx context.Context, params *eks.UpdateNodegroupVersionInput, optFns ...func(*Options)) (*eks.UpdateNodegroupVersionOutput, error)
-	// Updates a EKS Pod Identity association. Only the IAM role can be changed; an
-	// association can't be moved between clusters, namespaces, or service accounts. If
-	// you need to edit the namespace or service account, you need to delete the
-	// association and then create a new association with your desired settings.
+	// Updates a EKS Pod Identity association. In an update, you can change the IAM
+	// role, the target IAM role, or disableSessionTags . You must change at least one
+	// of these in an update. An association can't be moved between clusters,
+	// namespaces, or service accounts. If you need to edit the namespace or service
+	// account, you need to delete the association and then create a new association
+	// with your desired settings.
+	//
+	// Similar to Amazon Web Services IAM behavior, EKS Pod Identity associations are
+	// eventually consistent, and may take several seconds to be effective after the
+	// initial API call returns successfully. You must design your applications to
+	// account for these potential delays. We recommend that you don’t include
+	// association create/updates in the critical, high-availability code paths of your
+	// application. Instead, make changes in a separate initialization or setup routine
+	// that you run less frequently.
+	//
+	// You can set a target IAM role in the same or a different account for advanced
+	// scenarios. With a target role, EKS Pod Identity automatically performs two role
+	// assumptions in sequence: first assuming the role in the association that is in
+	// this account, then using those credentials to assume the target IAM role. This
+	// process provides your Pod with temporary credentials that have the permissions
+	// defined in the target role, allowing secure access to resources in another
+	// Amazon Web Services account.
 	UpdatePodIdentityAssociation(ctx context.Context, params *eks.UpdatePodIdentityAssociationInput, optFns ...func(*Options)) (*eks.UpdatePodIdentityAssociationOutput, error)
 }
 

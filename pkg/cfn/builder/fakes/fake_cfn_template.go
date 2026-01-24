@@ -55,6 +55,14 @@ type Properties struct {
 
 	VPCZoneIdentifier interface{}
 
+	UpgradePolicy *struct {
+		SupportType string
+	}
+
+	ControlPlaneScalingConfig *struct {
+		Tier string
+	}
+
 	LoadBalancerNames                 []string
 	MetricsCollection                 []map[string]interface{}
 	TargetGroupARNs                   []string

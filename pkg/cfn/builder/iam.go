@@ -30,6 +30,7 @@ const (
 	iamPolicyAmazonEC2ContainerRegistryPullOnly  = "AmazonEC2ContainerRegistryPullOnly"
 	iamPolicyCloudWatchAgentServerPolicy         = "CloudWatchAgentServerPolicy"
 	iamPolicyAmazonSSMManagedInstanceCore        = "AmazonSSMManagedInstanceCore"
+	iamPolicyAmazonEBSCSIDriverPolicy            = "service-role/AmazonEBSCSIDriverPolicy"
 
 	iamPolicyAmazonEKSFargatePodExecutionRolePolicy = "AmazonEKSFargatePodExecutionRolePolicy"
 )
@@ -74,16 +75,16 @@ var (
 	}
 )
 
-func (c *resourceSet) attachAllowPolicy(name string, refRole *gfnt.Value, statements []cft.MapOfInterfaces) {
-	c.newResource(name, &gfniam.Policy{
+func (r *resourceSet) attachAllowPolicy(name string, refRole *gfnt.Value, statements []cft.MapOfInterfaces) {
+	r.newResource(name, &gfniam.Policy{
 		PolicyName:     makeName(name),
 		Roles:          gfnt.NewSlice(refRole),
 		PolicyDocument: cft.MakePolicyDocument(statements...),
 	})
 }
 
-func (c *resourceSet) attachAllowPolicyDocument(name string, refRole *gfnt.Value, document api.InlineDocument) {
-	c.newResource(name, &gfniam.Policy{
+func (r *resourceSet) attachAllowPolicyDocument(name string, refRole *gfnt.Value, document api.InlineDocument) {
+	r.newResource(name, &gfniam.Policy{
 		PolicyName:     makeName(name),
 		Roles:          gfnt.NewSlice(refRole),
 		PolicyDocument: document,
@@ -343,6 +344,7 @@ func NewIAMRoleResourceSetForServiceAccount(spec *api.ClusterIAMServiceAccount, 
 		wellKnownPolicies:   spec.WellKnownPolicies,
 		roleName:            spec.RoleName,
 		permissionsBoundary: spec.PermissionsBoundary,
+		subjectPattern:      spec.SubjectPattern,
 		description: fmt.Sprintf(
 			"IAM role for serviceaccount %q %s",
 			spec.NameString(),
@@ -379,6 +381,37 @@ func NewIAMRoleResourceSetForPodIdentity(spec *api.PodIdentityAssociation) *IAMR
 	}
 }
 
+func NewIAMRoleResourceSetForCapability(spec *api.Capability) *IAMRoleResourceSet {
+	return &IAMRoleResourceSet{
+		template:         cft.NewTemplate(),
+		attachPolicy:     spec.AttachPolicy,
+		attachPolicyARNs: spec.AttachPolicyARNs,
+		description: fmt.Sprintf(
+			"IAM role for capability %s %s",
+			spec.Name,
+			templateDescriptionSuffix,
+		),
+		roleNameCollector: func(v string) error {
+			spec.RoleARN = v
+			return nil
+		},
+		trustStatements: []api.IAMStatement{
+			{
+				Effect: "Allow",
+				Principal: map[string]api.CustomStringSlice{
+					"Service": []string{
+						"capabilities.eks.amazonaws.com",
+					},
+				},
+				Action: []string{
+					"sts:AssumeRole",
+					"sts:TagSession",
+				},
+			},
+		},
+	}
+}
+
 // IAMRoleResourceSet holds IAM Role stack build-time information
 type IAMRoleResourceSet struct {
 	template            *cft.Template
@@ -395,6 +428,7 @@ type IAMRoleResourceSet struct {
 	namespace           string
 	permissionsBoundary string
 	description         string
+	subjectPattern      string
 }
 
 // NewIAMRoleResourceSetWithAttachPolicyARNs builds IAM Role stack from the give spec
@@ -493,6 +527,9 @@ func (rs *IAMRoleResourceSet) makeAssumeRolePolicyDocument() cft.MapOfInterfaces
 	}
 	if rs.serviceAccount != "" && rs.namespace != "" {
 		logger.Debug("service account location provided: %s/%s, adding sub condition", api.AWSNodeMeta.Namespace, api.AWSNodeMeta.Name)
+		if rs.subjectPattern != "" {
+			return rs.oidc.MakeAssumeRolePolicyDocumentWithServiceAccountConditionsAllowingWildcard(rs.namespace, rs.subjectPattern)
+		}
 		return rs.oidc.MakeAssumeRolePolicyDocumentWithServiceAccountConditions(rs.namespace, rs.serviceAccount)
 	}
 	return rs.oidc.MakeAssumeRolePolicyDocument()

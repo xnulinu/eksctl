@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 //revive:disable Not changing package name
 package dry_run
@@ -148,6 +147,8 @@ managedNodeGroups:
 
 privateCluster:
   enabled: false
+upgradePolicy:
+  supportType: ""
 vpc:
   autoAllocateIPv6: false
   cidr: 192.168.0.0/16
@@ -286,7 +287,7 @@ var _ = Describe("(Integration) [Dry-Run test]", func() {
 			Memory: "4",
 		}
 
-	}, "--managed=false", "--instance-selector-vcpus=2", "--instance-selector-memory=4"),
+	}, "--managed=false", "--instance-selector-vcpus=2", "--instance-selector-memory=4", "--node-ami-family=AmazonLinux2"),
 
 		Entry("instance selector options with managed nodegroup", func(actual, expected *api.ClusterConfig) {
 			Expect(actual.ManagedNodeGroups[0].InstanceTypes).NotTo(BeEmpty())
@@ -364,6 +365,7 @@ var _ = Describe("(Integration) [Dry-Run test]", func() {
 				c.IAM = nil
 				c.CloudWatch = nil
 				c.PrivateCluster = nil
+				c.UpgradePolicy = nil
 				c.NodeGroups = nil
 				c.AvailabilityZones = nil
 				c.KubernetesNetworkConfig = nil

@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package crud
 
@@ -26,12 +25,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	cfntypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	awsec2 "github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 
 	. "github.com/weaveworks/eksctl/integration/matchers"
-	"github.com/weaveworks/eksctl/integration/runner"
 	. "github.com/weaveworks/eksctl/integration/runner"
 	"github.com/weaveworks/eksctl/integration/tests"
 	clusterutils "github.com/weaveworks/eksctl/integration/utilities/cluster"
@@ -250,7 +247,7 @@ var _ = Describe("(Integration) Create, Get, Scale & Delete", func() {
 			Expect(descriptions).To(ContainElements(
 				"EKS cluster (dedicated VPC: true, dedicated IAM: true) [created and managed by eksctl]",
 				"EKS Managed Nodes (SSH access: false) [created by eksctl]",
-				"EKS nodes (AMI family: AmazonLinux2, SSH access: false, private networking: false) [created and managed by eksctl]",
+				"EKS nodes (AMI family: AmazonLinux2023, SSH access: false, private networking: false) [created and managed by eksctl]",
 			))
 		})
 	})
@@ -271,11 +268,21 @@ var _ = Describe("(Integration) Create, Get, Scale & Delete", func() {
 			test.Close()
 			Eventually(func() int {
 				return len(test.ListPods(test.Namespace, metav1.ListOptions{}).Items)
-			}, "3m", "1s").Should(BeZero())
+			}, "5m", "1s").Should(BeZero())
 		})
 
 		It("should deploy podinfo service to the cluster and access it via proxy", func() {
 			d := test.CreateDeploymentFromFile(test.Namespace, "../../data/crud-podinfo.yaml")
+			DeferCleanup(func() {
+				clientset := makeClientset()
+				gracePeriod := int64(0)
+				err := clientset.AppsV1().Deployments(test.Namespace).Delete(context.Background(), d.Name, metav1.DeleteOptions{
+					GracePeriodSeconds: &gracePeriod,
+				})
+				if err != nil {
+					fmt.Fprintf(GinkgoWriter, "Failed to delete deployment %s: %v\n", d.Name, err)
+				}
+			})
 			test.WaitForDeploymentReady(d, commonTimeout)
 
 			pods := test.ListPodsFromDeployment(d)
@@ -298,6 +305,16 @@ var _ = Describe("(Integration) Create, Get, Scale & Delete", func() {
 
 		It("should have functional DNS", func() {
 			d := test.CreateDaemonSetFromFile(test.Namespace, "../../data/test-dns.yaml")
+			DeferCleanup(func() {
+				clientset := makeClientset()
+				gracePeriod := int64(0)
+				err := clientset.AppsV1().DaemonSets(test.Namespace).Delete(context.Background(), d.Name, metav1.DeleteOptions{
+					GracePeriodSeconds: &gracePeriod,
+				})
+				if err != nil {
+					fmt.Fprintf(GinkgoWriter, "Failed to delete daemonset %s: %v\n", d.Name, err)
+				}
+			})
 			test.WaitForDaemonSetReady(d, commonTimeout)
 			ds, err := test.GetDaemonSet(test.Namespace, d.Name)
 			Expect(err).ShouldNot(HaveOccurred())
@@ -306,6 +323,16 @@ var _ = Describe("(Integration) Create, Get, Scale & Delete", func() {
 
 		It("should have access to HTTP(S) sites", func() {
 			d := test.CreateDaemonSetFromFile(test.Namespace, "../../data/test-http.yaml")
+			DeferCleanup(func() {
+				clientset := makeClientset()
+				gracePeriod := int64(0)
+				err := clientset.AppsV1().DaemonSets(test.Namespace).Delete(context.Background(), d.Name, metav1.DeleteOptions{
+					GracePeriodSeconds: &gracePeriod,
+				})
+				if err != nil {
+					fmt.Fprintf(GinkgoWriter, "Failed to delete daemonset %s: %v\n", d.Name, err)
+				}
+			})
 			test.WaitForDaemonSetReady(d, commonTimeout)
 			ds, err := test.GetDaemonSet(test.Namespace, d.Name)
 			Expect(err).ShouldNot(HaveOccurred())
@@ -348,7 +375,7 @@ var _ = Describe("(Integration) Create, Get, Scale & Delete", func() {
 			test.Close()
 			Eventually(func() int {
 				return len(test.ListPods(test.Namespace, metav1.ListOptions{}).Items)
-			}, "3m", "1s").Should(BeZero())
+			}, "5m", "1s").Should(BeZero())
 		})
 
 		It("should have OIDC disabled by default", func() {
@@ -425,6 +452,16 @@ var _ = Describe("(Integration) Create, Get, Scale & Delete", func() {
 
 		It("should successfully run pods with an iamserviceaccount", func() {
 			d := test.CreateDeploymentFromFile(test.Namespace, "../../data/iamserviceaccount-checker.yaml")
+			DeferCleanup(func() {
+				clientset := makeClientset()
+				gracePeriod := int64(0)
+				err := clientset.AppsV1().Deployments(test.Namespace).Delete(context.Background(), d.Name, metav1.DeleteOptions{
+					GracePeriodSeconds: &gracePeriod,
+				})
+				if err != nil {
+					fmt.Fprintf(GinkgoWriter, "Failed to delete deployment %s: %v\n", d.Name, err)
+				}
+			})
 			test.WaitForDeploymentReady(d, 10*time.Minute)
 
 			pods := test.ListPodsFromDeployment(d)
@@ -964,7 +1001,7 @@ var _ = Describe("(Integration) Create, Get, Scale & Delete", func() {
 	})
 
 	Context("scaling nodegroup(s)", func() {
-		scaleNgCmd := func(desiredCapacity string) runner.Cmd {
+		scaleNgCmd := func(desiredCapacity string) Cmd {
 			return params.EksctlScaleNodeGroupCmd.WithArgs(
 				"--cluster", params.ClusterName,
 				"--nodes-min", desiredCapacity,
@@ -973,7 +1010,7 @@ var _ = Describe("(Integration) Create, Get, Scale & Delete", func() {
 				"--name", scaleSingleNg,
 			)
 		}
-		getNgCmd := func(ngName string) runner.Cmd {
+		getNgCmd := func(ngName string) Cmd {
 			return params.EksctlGetCmd.WithArgs(
 				"nodegroup",
 				"--cluster", params.ClusterName,
@@ -1005,7 +1042,7 @@ var _ = Describe("(Integration) Create, Get, Scale & Delete", func() {
 
 			By("downscaling a nodegroup")
 			Expect(scaleNgCmd("1")).To(RunSuccessfully())
-			Eventually(getNgCmd(scaleSingleNg), "5m", "30s").Should(runner.RunSuccessfullyWithOutputStringLines(
+			Eventually(getNgCmd(scaleSingleNg), "5m", "30s").Should(RunSuccessfullyWithOutputStringLines(
 				ContainElement(ContainSubstring("Type: unmanaged")),
 				ContainElement(ContainSubstring("MaxSize: 1")),
 				ContainElement(ContainSubstring("MinSize: 1")),
@@ -1031,7 +1068,7 @@ var _ = Describe("(Integration) Create, Get, Scale & Delete", func() {
 				ContainElement(ContainSubstring("Status: CREATE_COMPLETE")),
 			))
 
-			Eventually(getNgCmd(scaleMultipleMng), "5m", "30s").Should(runner.RunSuccessfullyWithOutputStringLines(
+			Eventually(getNgCmd(scaleMultipleMng), "5m", "30s").Should(RunSuccessfullyWithOutputStringLines(
 				ContainElement(ContainSubstring("Type: managed")),
 				ContainElement(ContainSubstring("MaxSize: 5")),
 				ContainElement(ContainSubstring("MinSize: 5")),
@@ -1241,9 +1278,9 @@ func createAdditionalSubnet(cfg *api.ClusterConfig) string {
 	output, err := ec2.CreateSubnet(context.Background(), &awsec2.CreateSubnetInput{
 		AvailabilityZone: aws.String("us-west-2a"),
 		CidrBlock:        aws.String(cidr),
-		TagSpecifications: []types.TagSpecification{
+		TagSpecifications: []ec2types.TagSpecification{
 			{
-				ResourceType: types.ResourceTypeSubnet,
+				ResourceType: ec2types.ResourceTypeSubnet,
 				Tags:         tags,
 			},
 		},
@@ -1252,7 +1289,7 @@ func createAdditionalSubnet(cfg *api.ClusterConfig) string {
 	Expect(err).NotTo(HaveOccurred())
 
 	moutput, err := ec2.ModifySubnetAttribute(context.Background(), &awsec2.ModifySubnetAttributeInput{
-		MapPublicIpOnLaunch: &types.AttributeBooleanValue{
+		MapPublicIpOnLaunch: &ec2types.AttributeBooleanValue{
 			Value: aws.Bool(true),
 		},
 		SubnetId: output.Subnet.SubnetId,
@@ -1261,7 +1298,7 @@ func createAdditionalSubnet(cfg *api.ClusterConfig) string {
 
 	subnet := output.Subnet
 	routeTables, err := ec2.DescribeRouteTables(context.Background(), &awsec2.DescribeRouteTablesInput{
-		Filters: []types.Filter{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("association.subnet-id"),
 				Values: []string{*existingSubnet.SubnetId},

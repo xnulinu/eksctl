@@ -254,6 +254,42 @@ var _ = Describe("template builder for IAM", func() {
 			Expect(t).To(HaveOutputWithValue(outputs.IAMServiceAccountRoleName, `{ "Fn::GetAtt": "Role1.Arn" }`))
 		})
 
+		It("can construct an iamserviceaccount addon template with subject pattern using wildcards", func() {
+			serviceAccount := &api.ClusterIAMServiceAccount{}
+
+			serviceAccount.Name = "sa-1"
+			serviceAccount.SubjectPattern = "app-*"
+
+			serviceAccount.AttachPolicyARNs = []string{"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"}
+
+			appendServiceAccountToClusterConfig(cfg, serviceAccount)
+
+			rs := builder.NewIAMRoleResourceSetForServiceAccount(serviceAccount, oidc)
+
+			templateBody := []byte{}
+
+			Expect(rs).To(RenderWithoutErrors(&templateBody))
+
+			t := cft.NewTemplate()
+
+			Expect(t).To(LoadBytesWithoutErrors(templateBody))
+
+			Expect(t.Description).To(Equal("IAM role for serviceaccount \"default/sa-1\" [created and managed by eksctl]"))
+
+			Expect(t.Resources).To(HaveLen(1))
+			Expect(t.Outputs).To(HaveLen(1))
+
+			Expect(t).To(HaveResource(outputs.IAMServiceAccountRoleName, "AWS::IAM::Role"))
+
+			// Verify that the assume role policy uses StringLike for subject pattern
+			Expect(t).To(HaveResourceWithPropertyValue(outputs.IAMServiceAccountRoleName, "AssumeRolePolicyDocument", expectedServiceAccountAssumeRolePolicyDocumentWithWildcard))
+			Expect(t).To(HaveResourceWithPropertyValue(outputs.IAMServiceAccountRoleName, "ManagedPolicyArns", `[
+			"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+		]`))
+
+			Expect(t).To(HaveOutputWithValue(outputs.IAMServiceAccountRoleName, `{ "Fn::GetAtt": "Role1.Arn" }`))
+		})
+
 		It("can construct an iamserviceaccount addon template with all the wellKnownPolicies", func() {
 			serviceAccount := &api.ClusterIAMServiceAccount{}
 
@@ -283,20 +319,22 @@ var _ = Describe("template builder for IAM", func() {
 
 			Expect(t.Description).To(Equal("IAM role for serviceaccount \"default/sa-1\" [created and managed by eksctl]"))
 
-			Expect(t.Resources).To(HaveLen(10))
+			Expect(t.Resources).To(HaveLen(9))
 			Expect(t.Outputs).To(HaveLen(1))
 
 			Expect(t).To(HaveResource(outputs.IAMServiceAccountRoleName, "AWS::IAM::Role"))
 
 			Expect(t).To(HaveResourceWithPropertyValue(outputs.IAMServiceAccountRoleName, "AssumeRolePolicyDocument", expectedServiceAccountAssumeRolePolicyDocument))
 			Expect(t).To(HaveResourceWithPropertyValue(outputs.IAMServiceAccountRoleName, "ManagedPolicyArns", `[
-              {
+							{
                 "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
-		      }
+							},
+							{
+								"Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+		      		}
             ]`))
 			Expect(t).To(HaveOutputWithValue(outputs.IAMServiceAccountRoleName, `{ "Fn::GetAtt": "Role1.Arn" }`))
 			Expect(t).To(HaveResourceWithPropertyValue("PolicyAWSLoadBalancerController", "PolicyDocument", expectedAWSLoadBalancerControllerPolicyDocument))
-			Expect(t).To(HaveResourceWithPropertyValue("PolicyEBSCSIController", "PolicyDocument", expectedEbsPolicyDocument))
 		})
 
 		It("can parse an iamserviceaccount addon template", func() {
@@ -448,6 +486,29 @@ const expectedServiceAccountAssumeRolePolicyDocument = `{
 	"Version": "2012-10-17"
 }`
 
+const expectedServiceAccountAssumeRolePolicyDocumentWithWildcard = `{
+	"Statement": [
+	  {
+		"Action": [
+		  "sts:AssumeRoleWithWebIdentity"
+		],
+		"Condition": {
+		  "StringEquals": {
+			"oidc.eks.us-west-2.amazonaws.com/id/A39A2842863C47208955D753DE205E6E:aud": "sts.amazonaws.com"
+		  },
+		  "StringLike": {
+			"oidc.eks.us-west-2.amazonaws.com/id/A39A2842863C47208955D753DE205E6E:sub": "system:serviceaccount:default:app-*"
+		  }
+		},
+		"Effect": "Allow",
+		"Principal": {
+		  "Federated": "arn:aws:iam::456123987123:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/A39A2842863C47208955D753DE205E6E"
+		}
+	  }
+	],
+	"Version": "2012-10-17"
+}`
+
 const expectedAssumeRolePolicyDocument = `{
 	"Statement": [
 	  {
@@ -499,6 +560,7 @@ const expectedAWSLoadBalancerControllerPolicyDocument = `{
         "ec2:DescribeCoipPools",
         "ec2:GetSecurityGroupsForVpc",
         "ec2:DescribeIpamPools",
+        "ec2:DescribeRouteTables",
         "elasticloadbalancing:DescribeLoadBalancers",
         "elasticloadbalancing:DescribeLoadBalancerAttributes",
         "elasticloadbalancing:DescribeListeners",
@@ -741,148 +803,6 @@ const expectedAWSLoadBalancerControllerPolicyDocument = `{
       "Effect": "Allow",
       "Resource": "*"
     }
-  ],
-  "Version": "2012-10-17"
-}`
-
-const expectedEbsPolicyDocument = `{
-  "Statement": [
-	{
-	  "Action": [
-		"ec2:CreateSnapshot",
-		"ec2:AttachVolume",
-		"ec2:DetachVolume",
-		"ec2:ModifyVolume",
-		"ec2:DescribeAvailabilityZones",
-		"ec2:DescribeInstances",
-		"ec2:DescribeSnapshots",
-		"ec2:DescribeTags",
-		"ec2:DescribeVolumes",
-		"ec2:DescribeVolumesModifications"
-	  ],
-	  "Effect": "Allow",
-	  "Resource": "*"
-	},
-	{
-	  "Action": [
-		"ec2:CreateTags"
-	  ],
-	  "Condition": {
-		"StringEquals": {
-		  "ec2:CreateAction": [
-			"CreateVolume",
-			"CreateSnapshot"
-		  ]
-		}
-	  },
-	  "Effect": "Allow",
-	  "Resource": [
-		{
-		  "Fn::Sub": "arn:${AWS::Partition}:ec2:*:*:volume/*"
-		},
-		{
-		  "Fn::Sub": "arn:${AWS::Partition}:ec2:*:*:snapshot/*"
-		}
-	  ]
-	},
-	{
-	  "Action": [
-		"ec2:DeleteTags"
-	  ],
-	  "Effect": "Allow",
-	  "Resource": [
-		{
-		  "Fn::Sub": "arn:${AWS::Partition}:ec2:*:*:volume/*"
-		},
-		{
-		  "Fn::Sub": "arn:${AWS::Partition}:ec2:*:*:snapshot/*"
-		}
-	  ]
-	},
-	{
-	  "Action": [
-		"ec2:CreateVolume"
-	  ],
-	  "Condition": {
-		"StringLike": {
-		  "aws:RequestTag/ebs.csi.aws.com/cluster": "true"
-		}
-	  },
-	  "Effect": "Allow",
-	  "Resource": "*"
-	},
-	{
-	  "Action": [
-		"ec2:CreateVolume"
-	  ],
-	  "Condition": {
-		"StringLike": {
-		  "aws:RequestTag/CSIVolumeName": "*"
-		}
-	  },
-	  "Effect": "Allow",
-	  "Resource": "*"
-	},
-	{
-	  "Action": [
-		"ec2:DeleteVolume"
-	  ],
-	  "Condition": {
-		"StringLike": {
-		  "ec2:ResourceTag/ebs.csi.aws.com/cluster": "true"
-		}
-	  },
-	  "Effect": "Allow",
-	  "Resource": "*"
-	},
-	{
-	  "Action": [
-		"ec2:DeleteVolume"
-	  ],
-	  "Condition": {
-		"StringLike": {
-		  "ec2:ResourceTag/CSIVolumeName": "*"
-		}
-	  },
-	  "Effect": "Allow",
-	  "Resource": "*"
-	},
-	{
-	  "Action": [
-		"ec2:DeleteVolume"
-	  ],
-	  "Condition": {
-		"StringLike": {
-		  "ec2:ResourceTag/kubernetes.io/created-for/pvc/name": "*"
-		}
-	  },
-	  "Effect": "Allow",
-	  "Resource": "*"
-	},
-	{
-	  "Action": [
-		"ec2:DeleteSnapshot"
-	  ],
-	  "Condition": {
-		"StringLike": {
-		  "ec2:ResourceTag/CSIVolumeSnapshotName": "*"
-		}
-	  },
-	  "Effect": "Allow",
-	  "Resource": "*"
-	},
-	{
-	  "Action": [
-		"ec2:DeleteSnapshot"
-	  ],
-	  "Condition": {
-		"StringLike": {
-		  "ec2:ResourceTag/ebs.csi.aws.com/cluster": "true"
-		}
-	  },
-	  "Effect": "Allow",
-	  "Resource": "*"
-	}
   ],
   "Version": "2012-10-17"
 }`

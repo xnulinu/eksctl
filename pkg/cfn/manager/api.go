@@ -32,7 +32,7 @@ const (
 	resourceTypeAutoScalingGroup = "auto-scaling-group"
 	outputsRootPath              = "Outputs"
 	mappingsRootPath             = "Mappings"
-	ourStackRegexFmt             = "^(eksctl|EKS)-%s-((cluster|nodegroup-.+|addon-.+|podidentityrole-.+|fargate|karpenter)|(VPC|ServiceRole|ControlPlane|DefaultNodeGroup))$"
+	ourStackRegexFmt             = "^(eksctl|EKS)-%s-((cluster|nodegroup-.+|addon-.+|podidentityrole-.+|fargate|karpenter|capability-.+)|(VPC|ServiceRole|ControlPlane|DefaultNodeGroup))$"
 	clusterStackRegex            = "eksctl-.*-cluster"
 )
 
@@ -120,8 +120,9 @@ func NewStackCollection(provider api.ClusterProvider, spec *api.ClusterConfig) S
 // DoCreateStackRequest requests the creation of a CloudFormation stack
 func (c *StackCollection) DoCreateStackRequest(ctx context.Context, i *Stack, templateData TemplateData, tags, parameters map[string]string, withIAM bool, withNamedIAM bool) error {
 	input := &cloudformation.CreateStackInput{
-		StackName:       i.StackName,
-		DisableRollback: aws.Bool(c.disableRollback),
+		StackName:                   i.StackName,
+		DisableRollback:             aws.Bool(c.disableRollback),
+		EnableTerminationProtection: aws.Bool(true),
 	}
 	input.Tags = append(input.Tags, c.sharedTags...)
 	for k, v := range tags {
@@ -227,6 +228,7 @@ func (c *StackCollection) createClusterStack(ctx context.Context, stackName stri
 
 func (c *StackCollection) createStackRequest(ctx context.Context, stackName string, resourceSet builder.ResourceSetReader, tags, parameters map[string]string) (*Stack, error) {
 	stack := &Stack{StackName: &stackName}
+
 	templateBody, err := resourceSet.RenderJSON()
 	if err != nil {
 		return nil, fmt.Errorf("rendering template for %q stack: %w", *stack.StackName, err)
@@ -578,6 +580,16 @@ func (c *StackCollection) DeleteStackBySpec(ctx context.Context, s *Stack) (*Sta
 		return nil, fmt.Errorf("cannot delete stack %q as it doesn't bear our %q, %q tags", *s.StackName,
 			fmt.Sprintf("%s:%s", api.OldClusterNameTag, c.spec.Metadata.Name),
 			fmt.Sprintf("%s:%s", api.ClusterNameTag, c.spec.Metadata.Name))
+	}
+
+	if s.EnableTerminationProtection != nil && *s.EnableTerminationProtection {
+		updateTerminationProtectionInput := &cloudformation.UpdateTerminationProtectionInput{
+			StackName:                   s.StackId,
+			EnableTerminationProtection: aws.Bool(false),
+		}
+		if _, err := c.cloudformationAPI.UpdateTerminationProtection(ctx, updateTerminationProtectionInput); err != nil {
+			return nil, fmt.Errorf("disabling termination protection on stack %q: %w", *s.StackName, err)
+		}
 	}
 
 	input := &cloudformation.DeleteStackInput{

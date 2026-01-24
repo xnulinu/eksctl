@@ -124,6 +124,12 @@ type ClusterIAMServiceAccount struct {
 	// AWS tags for the service account
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
+
+	// Subject pattern to use in the trust policy condition. When set, this pattern is used
+	// instead of the service account name, and StringLike is used instead of StringEquals
+	// to allow wildcard matching.
+	// +optional
+	SubjectPattern string `json:"subjectPattern,omitempty"`
 }
 
 // ClusterIAMServiceAccountStatus holds status of the IAM service account
@@ -194,6 +200,15 @@ type PodIdentityAssociation struct {
 
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
+
+	// +optional
+	// TargetRoleARN is the Amazon Resource Name (ARN) of the IAM role to be chained to the IAM role specified as RoleARN.
+	// This enables cross-account access where the RoleARN is in the same account as the cluster and TargetRoleARN is in a different account.
+	TargetRoleARN *string `json:"targetRoleARN,omitempty"`
+
+	// +optional
+	// DisableSessionTags disables the tags that are automatically added to role session by Amazon EKS.
+	DisableSessionTags *bool `json:"disableSessionTags,omitempty"`
 }
 
 func (p PodIdentityAssociation) NameString() string {

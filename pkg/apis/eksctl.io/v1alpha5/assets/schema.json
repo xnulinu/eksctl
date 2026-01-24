@@ -178,6 +178,11 @@
         "name": {
           "type": "string"
         },
+        "namespaceConfig": {
+          "$ref": "#/definitions/AddonNamespaceConfig",
+          "description": "defines the namespace configuration for addon deployment. This configuration is immutable after addon creation.",
+          "x-intellij-html-description": "defines the namespace configuration for addon deployment. This configuration is immutable after addon creation."
+        },
         "owners": {
           "items": {
             "type": "string"
@@ -254,6 +259,7 @@
         "podIdentityAssociations",
         "useDefaultPodIdentityAssociations",
         "configurationValues",
+        "namespaceConfig",
         "publishers",
         "types",
         "owners"
@@ -261,6 +267,21 @@
       "additionalProperties": false,
       "description": "holds the EKS addon configuration",
       "x-intellij-html-description": "holds the EKS addon configuration"
+    },
+    "AddonNamespaceConfig": {
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "description": "specifies the target namespace for addon deployment",
+          "x-intellij-html-description": "specifies the target namespace for addon deployment"
+        }
+      },
+      "preferredOrder": [
+        "namespace"
+      ],
+      "additionalProperties": false,
+      "description": "holds namespace configuration for addon deployment",
+      "x-intellij-html-description": "holds namespace configuration for addon deployment"
     },
     "AddonsConfig": {
       "properties": {
@@ -284,6 +305,112 @@
       "additionalProperties": false,
       "description": "holds the addons config.",
       "x-intellij-html-description": "holds the addons config."
+    },
+    "ArgoCDAWSIDC": {
+      "required": [
+        "idcInstanceArn"
+      ],
+      "properties": {
+        "idcInstanceArn": {
+          "type": "string",
+          "description": "ARN of the IDC instance",
+          "x-intellij-html-description": "ARN of the IDC instance"
+        },
+        "idcRegion": {
+          "type": "string",
+          "description": "region of the IDC instance",
+          "x-intellij-html-description": "region of the IDC instance"
+        }
+      },
+      "preferredOrder": [
+        "idcInstanceArn",
+        "idcRegion"
+      ],
+      "additionalProperties": false,
+      "description": "holds AWS IDC configuration for ArgoCD",
+      "x-intellij-html-description": "holds AWS IDC configuration for ArgoCD"
+    },
+    "ArgoCDConfiguration": {
+      "properties": {
+        "awsIdc": {
+          "$ref": "#/definitions/ArgoCDAWSIDC",
+          "description": "configuration",
+          "x-intellij-html-description": "configuration"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "for ArgoCD installation",
+          "x-intellij-html-description": "for ArgoCD installation"
+        },
+        "networkAccess": {
+          "$ref": "#/definitions/ArgoCDNetworkAccess",
+          "description": "configuration",
+          "x-intellij-html-description": "configuration"
+        },
+        "rbacRoleMappings": {
+          "items": {
+            "$ref": "#/definitions/ArgoCDRoleMapping"
+          },
+          "type": "array",
+          "description": "for ArgoCD RBAC",
+          "x-intellij-html-description": "for ArgoCD RBAC"
+        }
+      },
+      "preferredOrder": [
+        "namespace",
+        "networkAccess",
+        "rbacRoleMappings",
+        "awsIdc"
+      ],
+      "additionalProperties": false,
+      "description": "holds ArgoCD-specific configuration",
+      "x-intellij-html-description": "holds ArgoCD-specific configuration"
+    },
+    "ArgoCDNetworkAccess": {
+      "properties": {
+        "vpceIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "for VPC endpoint access",
+          "x-intellij-html-description": "for VPC endpoint access"
+        }
+      },
+      "preferredOrder": [
+        "vpceIds"
+      ],
+      "additionalProperties": false,
+      "description": "holds network access configuration for ArgoCD",
+      "x-intellij-html-description": "holds network access configuration for ArgoCD"
+    },
+    "ArgoCDRoleMapping": {
+      "required": [
+        "role",
+        "identities"
+      ],
+      "properties": {
+        "identities": {
+          "items": {
+            "$ref": "#/definitions/SSOIdentity"
+          },
+          "type": "array",
+          "description": "SSO identities to map to the role",
+          "x-intellij-html-description": "SSO identities to map to the role"
+        },
+        "role": {
+          "type": "string",
+          "description": "ArgoCD role (ADMIN, EDITOR, VIEWER)",
+          "x-intellij-html-description": "ArgoCD role (ADMIN, EDITOR, VIEWER)"
+        }
+      },
+      "preferredOrder": [
+        "role",
+        "identities"
+      ],
+      "additionalProperties": false,
+      "description": "holds RBAC role mapping for ArgoCD",
+      "x-intellij-html-description": "holds RBAC role mapping for ArgoCD"
     },
     "AutoModeConfig": {
       "properties": {
@@ -318,6 +445,104 @@
         "nodePools"
       ],
       "additionalProperties": false
+    },
+    "Capability": {
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "accessPolicies": {
+          "items": {
+            "$ref": "#/definitions/AccessPolicy"
+          },
+          "type": "array",
+          "description": "list of access policies to associate with the access entry",
+          "x-intellij-html-description": "list of access policies to associate with the access entry"
+        },
+        "attachPolicy": {
+          "$ref": "#/definitions/InlineDocument",
+          "description": "holds a policy document to attach",
+          "x-intellij-html-description": "holds a policy document to attach"
+        },
+        "attachPolicyARNs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "list of ARNs of the IAM policies to attach",
+          "x-intellij-html-description": "list of ARNs of the IAM policies to attach"
+        },
+        "configuration": {
+          "$ref": "#/definitions/CapabilityConfiguration",
+          "description": "holds capability-specific configuration. Only applicable for ArgoCD",
+          "x-intellij-html-description": "holds capability-specific configuration. Only applicable for ArgoCD"
+        },
+        "deletePropagationPolicy": {
+          "type": "string",
+          "description": "specifies the delete propagation policy",
+          "x-intellij-html-description": "specifies the delete propagation policy"
+        },
+        "name": {
+          "type": "string",
+          "description": "of the capability",
+          "x-intellij-html-description": "of the capability"
+        },
+        "permissionsBoundary": {
+          "type": "string",
+          "description": "ARN of the permissions boundary policy",
+          "x-intellij-html-description": "ARN of the permissions boundary policy"
+        },
+        "roleArn": {
+          "type": "string",
+          "description": "IAM role ARN for the capability",
+          "x-intellij-html-description": "IAM role ARN for the capability"
+        },
+        "tags": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "used to tag AWS resources created by the capability",
+          "x-intellij-html-description": "used to tag AWS resources created by the capability",
+          "default": "{}"
+        },
+        "type": {
+          "type": "string",
+          "description": "of the capability (ACK, KRO, ARGOCD)",
+          "x-intellij-html-description": "of the capability (ACK, KRO, ARGOCD)"
+        }
+      },
+      "preferredOrder": [
+        "name",
+        "type",
+        "roleArn",
+        "deletePropagationPolicy",
+        "configuration",
+        "tags",
+        "accessPolicies",
+        "attachPolicyARNs",
+        "attachPolicy",
+        "permissionsBoundary"
+      ],
+      "additionalProperties": false,
+      "description": "represents an EKS capability configuration",
+      "x-intellij-html-description": "represents an EKS capability configuration"
+    },
+    "CapabilityConfiguration": {
+      "properties": {
+        "argocd": {
+          "$ref": "#/definitions/ArgoCDConfiguration",
+          "description": "configuration for ARGOCD capability type",
+          "x-intellij-html-description": "configuration for ARGOCD capability type"
+        }
+      },
+      "preferredOrder": [
+        "argocd"
+      ],
+      "additionalProperties": false,
+      "description": "holds capability-specific configuration",
+      "x-intellij-html-description": "holds capability-specific configuration"
     },
     "CapacityReservation": {
       "properties": {
@@ -441,10 +666,23 @@
           },
           "type": "array"
         },
+        "capabilities": {
+          "items": {
+            "$ref": "#/definitions/Capability"
+          },
+          "type": "array",
+          "description": "specifies the capabilities for the cluster.",
+          "x-intellij-html-description": "specifies the capabilities for the cluster."
+        },
         "cloudWatch": {
           "$ref": "#/definitions/ClusterCloudWatch",
           "description": "See [CloudWatch support](/usage/cloudwatch-cluster-logging/)",
           "x-intellij-html-description": "See <a href=\"/usage/cloudwatch-cluster-logging/\">CloudWatch support</a>"
+        },
+        "controlPlaneScalingConfig": {
+          "$ref": "#/definitions/ControlPlaneScalingConfig",
+          "description": "specifies control plane scaling configuration.",
+          "x-intellij-html-description": "specifies control plane scaling configuration."
         },
         "fargateProfiles": {
           "items": {
@@ -529,6 +767,11 @@
         "secretsEncryption": {
           "$ref": "#/definitions/SecretsEncryption"
         },
+        "upgradePolicy": {
+          "$ref": "#/definitions/UpgradePolicy",
+          "description": "specifies the upgrade policy for the cluster",
+          "x-intellij-html-description": "specifies the upgrade policy for the cluster"
+        },
         "vpc": {
           "$ref": "#/definitions/ClusterVPC"
         },
@@ -542,6 +785,7 @@
         "kind",
         "apiVersion",
         "metadata",
+        "upgradePolicy",
         "kubernetesNetworkConfig",
         "autoModeConfig",
         "remoteNetworkConfig",
@@ -563,7 +807,9 @@
         "gitops",
         "karpenter",
         "outpost",
-        "zonalShiftConfig"
+        "controlPlaneScalingConfig",
+        "zonalShiftConfig",
+        "capabilities"
       ],
       "additionalProperties": false,
       "description": "a simple config, to be replaced with Cluster API",
@@ -729,6 +975,11 @@
         "status": {
           "$ref": "#/definitions/ClusterIAMServiceAccountStatus"
         },
+        "subjectPattern": {
+          "type": "string",
+          "description": "Subject pattern to use in the trust policy condition. When set, this pattern is used instead of the service account name, and StringLike is used instead of StringEquals to allow wildcard matching.",
+          "x-intellij-html-description": "Subject pattern to use in the trust policy condition. When set, this pattern is used instead of the service account name, and StringLike is used instead of StringEquals to allow wildcard matching."
+        },
         "tags": {
           "additionalProperties": {
             "type": "string"
@@ -752,7 +1003,8 @@
         "status",
         "roleName",
         "roleOnly",
-        "tags"
+        "tags",
+        "subjectPattern"
       ],
       "additionalProperties": false,
       "description": "holds an IAM service account metadata and configuration",
@@ -1001,6 +1253,19 @@
       "additionalProperties": false,
       "description": "holds global subnet and all child subnets",
       "x-intellij-html-description": "holds global subnet and all child subnets"
+    },
+    "ControlPlaneScalingConfig": {
+      "properties": {
+        "tier": {
+          "type": "string"
+        }
+      },
+      "preferredOrder": [
+        "tier"
+      ],
+      "additionalProperties": false,
+      "description": "holds control plane scaling configuration.",
+      "x-intellij-html-description": "holds control plane scaling configuration."
     },
     "FargateProfile": {
       "required": [
@@ -1386,12 +1651,12 @@
         },
         "amiFamily": {
           "type": "string",
-          "description": "Valid variants are: `\"AmazonLinux2\"` (default), `\"AmazonLinux2023\"`, `\"UbuntuPro2404\"`, `\"Ubuntu2404\"`, `\"UbuntuPro2204\"`, `\"Ubuntu2204\"`, `\"UbuntuPro2004\"`, `\"Ubuntu2004\"`, `\"Bottlerocket\"`, `\"WindowsServer2019CoreContainer\"`, `\"WindowsServer2019FullContainer\"`, `\"WindowsServer2022CoreContainer\"`, `\"WindowsServer2022FullContainer\"`.",
-          "x-intellij-html-description": "Valid variants are: <code>&quot;AmazonLinux2&quot;</code> (default), <code>&quot;AmazonLinux2023&quot;</code>, <code>&quot;UbuntuPro2404&quot;</code>, <code>&quot;Ubuntu2404&quot;</code>, <code>&quot;UbuntuPro2204&quot;</code>, <code>&quot;Ubuntu2204&quot;</code>, <code>&quot;UbuntuPro2004&quot;</code>, <code>&quot;Ubuntu2004&quot;</code>, <code>&quot;Bottlerocket&quot;</code>, <code>&quot;WindowsServer2019CoreContainer&quot;</code>, <code>&quot;WindowsServer2019FullContainer&quot;</code>, <code>&quot;WindowsServer2022CoreContainer&quot;</code>, <code>&quot;WindowsServer2022FullContainer&quot;</code>.",
-          "default": "AmazonLinux2",
+          "description": "Valid variants are: `\"AmazonLinux2023\"` (default), `\"AmazonLinux2\"`, `\"UbuntuPro2404\"`, `\"Ubuntu2404\"`, `\"UbuntuPro2204\"`, `\"Ubuntu2204\"`, `\"UbuntuPro2004\"`, `\"Ubuntu2004\"`, `\"Bottlerocket\"`, `\"WindowsServer2019CoreContainer\"`, `\"WindowsServer2019FullContainer\"`, `\"WindowsServer2022CoreContainer\"`, `\"WindowsServer2022FullContainer\"`, `\"WindowsServer2025CoreContainer\"`, `\"WindowsServer2025FullContainer\"`.",
+          "x-intellij-html-description": "Valid variants are: <code>&quot;AmazonLinux2023&quot;</code> (default), <code>&quot;AmazonLinux2&quot;</code>, <code>&quot;UbuntuPro2404&quot;</code>, <code>&quot;Ubuntu2404&quot;</code>, <code>&quot;UbuntuPro2204&quot;</code>, <code>&quot;Ubuntu2204&quot;</code>, <code>&quot;UbuntuPro2004&quot;</code>, <code>&quot;Ubuntu2004&quot;</code>, <code>&quot;Bottlerocket&quot;</code>, <code>&quot;WindowsServer2019CoreContainer&quot;</code>, <code>&quot;WindowsServer2019FullContainer&quot;</code>, <code>&quot;WindowsServer2022CoreContainer&quot;</code>, <code>&quot;WindowsServer2022FullContainer&quot;</code>, <code>&quot;WindowsServer2025CoreContainer&quot;</code>, <code>&quot;WindowsServer2025FullContainer&quot;</code>.",
+          "default": "AmazonLinux2023",
           "enum": [
-            "AmazonLinux2",
             "AmazonLinux2023",
+            "AmazonLinux2",
             "UbuntuPro2404",
             "Ubuntu2404",
             "UbuntuPro2204",
@@ -1402,7 +1667,9 @@
             "WindowsServer2019CoreContainer",
             "WindowsServer2019FullContainer",
             "WindowsServer2022CoreContainer",
-            "WindowsServer2022FullContainer"
+            "WindowsServer2022FullContainer",
+            "WindowsServer2025CoreContainer",
+            "WindowsServer2025FullContainer"
           ]
         },
         "asgSuspendProcesses": {
@@ -1736,12 +2003,12 @@
         },
         "amiFamily": {
           "type": "string",
-          "description": "Valid variants are: `\"AmazonLinux2\"` (default), `\"AmazonLinux2023\"`, `\"UbuntuPro2404\"`, `\"Ubuntu2404\"`, `\"UbuntuPro2204\"`, `\"Ubuntu2204\"`, `\"UbuntuPro2004\"`, `\"Ubuntu2004\"`, `\"Bottlerocket\"`, `\"WindowsServer2019CoreContainer\"`, `\"WindowsServer2019FullContainer\"`, `\"WindowsServer2022CoreContainer\"`, `\"WindowsServer2022FullContainer\"`.",
-          "x-intellij-html-description": "Valid variants are: <code>&quot;AmazonLinux2&quot;</code> (default), <code>&quot;AmazonLinux2023&quot;</code>, <code>&quot;UbuntuPro2404&quot;</code>, <code>&quot;Ubuntu2404&quot;</code>, <code>&quot;UbuntuPro2204&quot;</code>, <code>&quot;Ubuntu2204&quot;</code>, <code>&quot;UbuntuPro2004&quot;</code>, <code>&quot;Ubuntu2004&quot;</code>, <code>&quot;Bottlerocket&quot;</code>, <code>&quot;WindowsServer2019CoreContainer&quot;</code>, <code>&quot;WindowsServer2019FullContainer&quot;</code>, <code>&quot;WindowsServer2022CoreContainer&quot;</code>, <code>&quot;WindowsServer2022FullContainer&quot;</code>.",
-          "default": "AmazonLinux2",
+          "description": "Valid variants are: `\"AmazonLinux2023\"` (default), `\"AmazonLinux2\"`, `\"UbuntuPro2404\"`, `\"Ubuntu2404\"`, `\"UbuntuPro2204\"`, `\"Ubuntu2204\"`, `\"UbuntuPro2004\"`, `\"Ubuntu2004\"`, `\"Bottlerocket\"`, `\"WindowsServer2019CoreContainer\"`, `\"WindowsServer2019FullContainer\"`, `\"WindowsServer2022CoreContainer\"`, `\"WindowsServer2022FullContainer\"`, `\"WindowsServer2025CoreContainer\"`, `\"WindowsServer2025FullContainer\"`.",
+          "x-intellij-html-description": "Valid variants are: <code>&quot;AmazonLinux2023&quot;</code> (default), <code>&quot;AmazonLinux2&quot;</code>, <code>&quot;UbuntuPro2404&quot;</code>, <code>&quot;Ubuntu2404&quot;</code>, <code>&quot;UbuntuPro2204&quot;</code>, <code>&quot;Ubuntu2204&quot;</code>, <code>&quot;UbuntuPro2004&quot;</code>, <code>&quot;Ubuntu2004&quot;</code>, <code>&quot;Bottlerocket&quot;</code>, <code>&quot;WindowsServer2019CoreContainer&quot;</code>, <code>&quot;WindowsServer2019FullContainer&quot;</code>, <code>&quot;WindowsServer2022CoreContainer&quot;</code>, <code>&quot;WindowsServer2022FullContainer&quot;</code>, <code>&quot;WindowsServer2025CoreContainer&quot;</code>, <code>&quot;WindowsServer2025FullContainer&quot;</code>.",
+          "default": "AmazonLinux2023",
           "enum": [
-            "AmazonLinux2",
             "AmazonLinux2023",
+            "AmazonLinux2",
             "UbuntuPro2404",
             "Ubuntu2404",
             "UbuntuPro2204",
@@ -1752,7 +2019,9 @@
             "WindowsServer2019CoreContainer",
             "WindowsServer2019FullContainer",
             "WindowsServer2022CoreContainer",
-            "WindowsServer2022FullContainer"
+            "WindowsServer2022FullContainer",
+            "WindowsServer2025CoreContainer",
+            "WindowsServer2025FullContainer"
           ]
         },
         "asgMetricsCollection": {
@@ -2280,10 +2549,43 @@
           "type": "boolean",
           "description": "Enables the auto repair feature for the nodegroup",
           "x-intellij-html-description": "Enables the auto repair feature for the nodegroup"
+        },
+        "maxParallelNodesRepairedCount": {
+          "type": "integer",
+          "description": "specifies the maximum number of nodes that can be repaired concurrently or in parallel, expressed as a count of unhealthy nodes. When using this, you cannot also set MaxParallelNodesRepairedPercentage at the same time.",
+          "x-intellij-html-description": "specifies the maximum number of nodes that can be repaired concurrently or in parallel, expressed as a count of unhealthy nodes. When using this, you cannot also set MaxParallelNodesRepairedPercentage at the same time."
+        },
+        "maxParallelNodesRepairedPercentage": {
+          "type": "integer",
+          "description": "specifies the maximum number of nodes that can be repaired concurrently or in parallel, expressed as a percentage of unhealthy nodes. When using this, you cannot also set MaxParallelNodesRepairedCount at the same time.",
+          "x-intellij-html-description": "specifies the maximum number of nodes that can be repaired concurrently or in parallel, expressed as a percentage of unhealthy nodes. When using this, you cannot also set MaxParallelNodesRepairedCount at the same time."
+        },
+        "maxUnhealthyNodeThresholdCount": {
+          "type": "integer",
+          "description": "specifies a count threshold of unhealthy nodes, above which node auto repair actions will stop. When using this, you cannot also set MaxUnhealthyNodeThresholdPercentage at the same time.",
+          "x-intellij-html-description": "specifies a count threshold of unhealthy nodes, above which node auto repair actions will stop. When using this, you cannot also set MaxUnhealthyNodeThresholdPercentage at the same time."
+        },
+        "maxUnhealthyNodeThresholdPercentage": {
+          "type": "integer",
+          "description": "specifies a percentage threshold of unhealthy nodes, above which node auto repair actions will stop. When using this, you cannot also set MaxUnhealthyNodeThresholdCount at the same time.",
+          "x-intellij-html-description": "specifies a percentage threshold of unhealthy nodes, above which node auto repair actions will stop. When using this, you cannot also set MaxUnhealthyNodeThresholdCount at the same time."
+        },
+        "nodeRepairConfigOverrides": {
+          "items": {
+            "$ref": "#/definitions/NodeRepairConfigOverride"
+          },
+          "type": "array",
+          "description": "specifies granular overrides for specific repair actions. These overrides control the repair action and the repair delay time before a node is considered eligible for repair. If you use this, you must specify all the values.",
+          "x-intellij-html-description": "specifies granular overrides for specific repair actions. These overrides control the repair action and the repair delay time before a node is considered eligible for repair. If you use this, you must specify all the values."
         }
       },
       "preferredOrder": [
-        "enabled"
+        "enabled",
+        "maxUnhealthyNodeThresholdPercentage",
+        "maxUnhealthyNodeThresholdCount",
+        "maxParallelNodesRepairedPercentage",
+        "maxParallelNodesRepairedCount",
+        "nodeRepairConfigOverrides"
       ],
       "additionalProperties": false,
       "description": "contains the auto repair configuration for the nodegroup",
@@ -2409,6 +2711,39 @@
       "description": "contains the configuration for updating NodeGroups.",
       "x-intellij-html-description": "contains the configuration for updating NodeGroups."
     },
+    "NodeRepairConfigOverride": {
+      "properties": {
+        "minRepairWaitTimeMins": {
+          "type": "integer",
+          "description": "specifies the minimum time in minutes to wait before attempting to repair a node with this specific NodeMonitoringCondition and NodeUnhealthyReason",
+          "x-intellij-html-description": "specifies the minimum time in minutes to wait before attempting to repair a node with this specific NodeMonitoringCondition and NodeUnhealthyReason"
+        },
+        "nodeMonitoringCondition": {
+          "type": "string",
+          "description": "specifies an unhealthy condition reported by the node monitoring agent that this override would apply to",
+          "x-intellij-html-description": "specifies an unhealthy condition reported by the node monitoring agent that this override would apply to"
+        },
+        "nodeUnhealthyReason": {
+          "type": "string",
+          "description": "specifies a reason reported by the node monitoring agent that this override would apply to",
+          "x-intellij-html-description": "specifies a reason reported by the node monitoring agent that this override would apply to"
+        },
+        "repairAction": {
+          "type": "string",
+          "description": "specifies the repair action to take for nodes when all of the specified conditions are met",
+          "x-intellij-html-description": "specifies the repair action to take for nodes when all of the specified conditions are met"
+        }
+      },
+      "preferredOrder": [
+        "nodeMonitoringCondition",
+        "nodeUnhealthyReason",
+        "minRepairWaitTimeMins",
+        "repairAction"
+      ],
+      "additionalProperties": false,
+      "description": "specifies granular overrides for specific repair actions. These overrides control the repair action and the repair delay time before a node is considered eligible for repair. If you use this, you must specify all the values.",
+      "x-intellij-html-description": "specifies granular overrides for specific repair actions. These overrides control the repair action and the repair delay time before a node is considered eligible for repair. If you use this, you must specify all the values."
+    },
     "OIDCIdentityProvider": {
       "required": [
         "name",
@@ -2513,6 +2848,11 @@
           "type": "boolean",
           "default": "false"
         },
+        "disableSessionTags": {
+          "type": "boolean",
+          "description": "disables the tags that are automatically added to role session by Amazon EKS.",
+          "x-intellij-html-description": "disables the tags that are automatically added to role session by Amazon EKS."
+        },
         "namespace": {
           "type": "string"
         },
@@ -2544,6 +2884,11 @@
           "type": "object",
           "default": "{}"
         },
+        "targetRoleARN": {
+          "type": "string",
+          "description": "Amazon Resource Name (ARN) of the IAM role to be chained to the IAM role specified as RoleARN. This enables cross-account access where the RoleARN is in the same account as the cluster and TargetRoleARN is in a different account.",
+          "x-intellij-html-description": "Amazon Resource Name (ARN) of the IAM role to be chained to the IAM role specified as RoleARN. This enables cross-account access where the RoleARN is in the same account as the cluster and TargetRoleARN is in a different account."
+        },
         "wellKnownPolicies": {
           "$ref": "#/definitions/WellKnownPolicies"
         }
@@ -2558,7 +2903,9 @@
         "permissionPolicyARNs",
         "permissionPolicy",
         "wellKnownPolicies",
-        "tags"
+        "tags",
+        "targetRoleARN",
+        "disableSessionTags"
       ],
       "additionalProperties": false
     },
@@ -2670,6 +3017,31 @@
       ],
       "additionalProperties": false
     },
+    "SSOIdentity": {
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "of the SSO identity",
+          "x-intellij-html-description": "of the SSO identity"
+        },
+        "type": {
+          "type": "string",
+          "description": "of the SSO identity (SSO_USER, SSO_GROUP)",
+          "x-intellij-html-description": "of the SSO identity (SSO<em>USER, SSO</em>GROUP)"
+        }
+      },
+      "preferredOrder": [
+        "id",
+        "type"
+      ],
+      "additionalProperties": false,
+      "description": "represents an SSO identity",
+      "x-intellij-html-description": "represents an SSO identity"
+    },
     "SecretsEncryption": {
       "required": [
         "keyARN"
@@ -2685,6 +3057,26 @@
       "additionalProperties": false,
       "description": "defines the configuration for KMS encryption provider",
       "x-intellij-html-description": "defines the configuration for KMS encryption provider"
+    },
+    "UpgradePolicy": {
+      "properties": {
+        "supportType": {
+          "type": "string",
+          "description": "specifies the support type for the cluster. Valid variants are: `\"STANDARD\"` standard support for the cluster, `\"EXTENDED\"` extended support for the cluster (default) defines the default support type.",
+          "x-intellij-html-description": "specifies the support type for the cluster. Valid variants are: <code>&quot;STANDARD&quot;</code> standard support for the cluster, <code>&quot;EXTENDED&quot;</code> extended support for the cluster (default) defines the default support type.",
+          "default": "EXTENDED",
+          "enum": [
+            "STANDARD",
+            "EXTENDED"
+          ]
+        }
+      },
+      "preferredOrder": [
+        "supportType"
+      ],
+      "additionalProperties": false,
+      "description": "holds the upgrade policy configuration for the cluster",
+      "x-intellij-html-description": "holds the upgrade policy configuration for the cluster"
     },
     "VPCGateway": {
       "type": "string",

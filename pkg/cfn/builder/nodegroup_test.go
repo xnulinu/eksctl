@@ -467,11 +467,9 @@ var _ = Describe("Unmanaged NodeGroup Template Builder", func() {
 					ng.IAM.WithAddonPolicies.EBS = aws.Bool(true)
 				})
 
-				It("adds PolicyEBS to the role", func() {
-					Expect(ngTemplate.Resources).To(HaveKey("PolicyEBS"))
-
-					Expect(ngTemplate.Resources["PolicyEBS"].Properties.Roles).To(HaveLen(1))
-					Expect(isRefTo(ngTemplate.Resources["PolicyEBS"].Properties.Roles[0], "NodeInstanceRole")).To(BeTrue())
+				It("adds the AmazonEBSCSIDriverPolicy managed policy to the role", func() {
+					Expect(ngTemplate.Resources["NodeInstanceRole"].Properties.ManagedPolicyArns).To(HaveLen(5))
+					Expect(ngTemplate.Resources["NodeInstanceRole"].Properties.ManagedPolicyArns).To(ContainElement(makePolicyARNRef("service-role/AmazonEBSCSIDriverPolicy")))
 				})
 			})
 
@@ -646,8 +644,6 @@ var _ = Describe("Unmanaged NodeGroup Template Builder", func() {
 					properties := ngTemplate.Resources["EFASG"].Properties
 					Expect(properties.VpcID).To(ContainElement(vpcID))
 					Expect(properties.GroupDescription).To(Equal("EFA-enabled security group"))
-					Expect(properties.Tags[0].Key).To(Equal("kubernetes.io/cluster/bonsai"))
-					Expect(properties.Tags[0].Value).To(Equal("owned"))
 
 					Expect(ngTemplate.Resources).To(HaveKey("EFAEgressSelf"))
 					properties = ngTemplate.Resources["EFAEgressSelf"].Properties
@@ -660,6 +656,120 @@ var _ = Describe("Unmanaged NodeGroup Template Builder", func() {
 					Expect(properties.GroupID).To(Equal(makeRef("EFASG")))
 					Expect(properties.IPProtocol).To(Equal("-1"))
 					Expect(properties.Description).To(Equal("Allow worker nodes in group ng-abcd1234 to communicate to itself (EFA-enabled)"))
+				})
+			})
+
+			Context("version-aware EFA security group creation", func() {
+				BeforeEach(func() {
+					ng.EFAEnabled = aws.Bool(true)
+					p.MockEC2().On("DescribeInstanceTypes",
+						mock.Anything,
+						&ec2.DescribeInstanceTypesInput{
+							InstanceTypes: []ec2types.InstanceType{ec2types.InstanceTypeM5Large},
+						},
+					).Return(
+						&ec2.DescribeInstanceTypesOutput{
+							InstanceTypes: []ec2types.InstanceTypeInfo{
+								{
+									InstanceType: ec2types.InstanceTypeM5Large,
+									NetworkInfo: &ec2types.NetworkInfo{
+										EfaSupported:        aws.Bool(true),
+										MaximumNetworkCards: aws.Int32(4),
+									},
+								},
+							},
+						}, nil,
+					)
+				})
+
+				Context("Kubernetes 1.33+ has no built-in EFA support since self managed", func() {
+					BeforeEach(func() {
+						cfg.Metadata.Version = "1.33"
+					})
+
+					It("creates custom EFA security groups", func() {
+						Expect(ngTemplate.Resources).To(HaveKey("EFASG"))
+						Expect(ngTemplate.Resources).To(HaveKey("EFAEgressSelf"))
+						Expect(ngTemplate.Resources).To(HaveKey("EFAIngressSelf"))
+					})
+				})
+
+				Context("Kubernetes 1.32 without built-in EFA support", func() {
+					BeforeEach(func() {
+						cfg.Metadata.Version = "1.32"
+					})
+
+					It("creates custom EFA security groups", func() {
+						Expect(ngTemplate.Resources).To(HaveKey("EFASG"))
+						Expect(ngTemplate.Resources).To(HaveKey("EFAEgressSelf"))
+						Expect(ngTemplate.Resources).To(HaveKey("EFAIngressSelf"))
+					})
+				})
+
+				Context("Kubernetes 1.31 without built-in EFA support", func() {
+					BeforeEach(func() {
+						cfg.Metadata.Version = "1.31"
+					})
+
+					It("creates custom EFA security groups", func() {
+						Expect(ngTemplate.Resources).To(HaveKey("EFASG"))
+						Expect(ngTemplate.Resources).To(HaveKey("EFAEgressSelf"))
+						Expect(ngTemplate.Resources).To(HaveKey("EFAIngressSelf"))
+					})
+				})
+
+				Context("invalid Kubernetes version", func() {
+					BeforeEach(func() {
+						cfg.Metadata.Version = "invalid.version"
+					})
+
+					It("falls back to creating custom EFA security groups", func() {
+						Expect(ngTemplate.Resources).To(HaveKey("EFASG"))
+						Expect(ngTemplate.Resources).To(HaveKey("EFAEgressSelf"))
+						Expect(ngTemplate.Resources).To(HaveKey("EFAIngressSelf"))
+					})
+				})
+
+				Context("empty Kubernetes version", func() {
+					BeforeEach(func() {
+						cfg.Metadata.Version = ""
+					})
+
+					It("falls back to creating custom EFA security groups", func() {
+						Expect(ngTemplate.Resources).To(HaveKey("EFASG"))
+						Expect(ngTemplate.Resources).To(HaveKey("EFAEgressSelf"))
+						Expect(ngTemplate.Resources).To(HaveKey("EFAIngressSelf"))
+					})
+				})
+			})
+
+			Context("EFA disabled", func() {
+				BeforeEach(func() {
+					ng.EFAEnabled = aws.Bool(false)
+				})
+
+				Context("Kubernetes 1.33+", func() {
+					BeforeEach(func() {
+						cfg.Metadata.Version = "1.33"
+					})
+
+					It("does not create EFA security groups regardless of version", func() {
+						Expect(ngTemplate.Resources).NotTo(HaveKey("EFASG"))
+						Expect(ngTemplate.Resources).NotTo(HaveKey("EFAEgressSelf"))
+						Expect(ngTemplate.Resources).NotTo(HaveKey("EFAIngressSelf"))
+					})
+				})
+
+				Context("Kubernetes 1.32", func() {
+					BeforeEach(func() {
+						cfg.Metadata.Version = "1.32"
+					})
+
+					It("does not create EFA security groups regardless of version", func() {
+						Expect(ngTemplate.Resources).NotTo(HaveKey("EFASG"))
+						Expect(ngTemplate.Resources).NotTo(HaveKey("EFAEgressSelf"))
+						Expect(ngTemplate.Resources).NotTo(HaveKey("EFAIngressSelf"))
+					})
 				})
 			})
 		})
@@ -786,6 +896,8 @@ var _ = Describe("Unmanaged NodeGroup Template Builder", func() {
 			Context("ng.EFAEnabled is true and ng.Placement is nil", func() {
 				BeforeEach(func() {
 					ng.EFAEnabled = aws.Bool(true)
+					fakeVPCImporter.VPCReturns(gfnt.MakeFnImportValueString("vpc-12345"))
+					fakeVPCImporter.ControlPlaneSecurityGroupReturns(gfnt.MakeFnImportValueString("sg-12345"))
 				})
 
 				It("creates NodeGroupPlacementGroup resource", func() {
@@ -1319,6 +1431,29 @@ var _ = Describe("Unmanaged NodeGroup Template Builder", func() {
 			Context("ng.EFAEnabled is set", func() {
 				BeforeEach(func() {
 					ng.EFAEnabled = aws.Bool(true)
+					fakeVPCImporter.VPCReturns(gfnt.MakeFnImportValueString("vpc-12345"))
+					fakeVPCImporter.ControlPlaneSecurityGroupReturns(gfnt.MakeFnImportValueString("sg-12345"))
+					p.MockEC2().On("DescribeInstanceTypes",
+						mock.MatchedBy(func(input *ec2.DescribeInstanceTypesInput) bool {
+							return len(input.InstanceTypes) > 0
+						}),
+					).Return(&ec2.DescribeInstanceTypesOutput{
+						InstanceTypes: []ec2types.InstanceTypeInfo{
+							{
+								InstanceType: "m5n.large",
+								NetworkInfo: &ec2types.NetworkInfo{
+									MaximumNetworkInterfaces: aws.Int32(3),
+									NetworkCards: []ec2types.NetworkCardInfo{
+										{
+											MaximumNetworkInterfaces: aws.Int32(4),
+											NetworkCardIndex:         aws.Int32(0),
+											NetworkPerformance:       aws.String("Up to 25 Gigabit"),
+										},
+									},
+								},
+							},
+						},
+					}, nil)
 				})
 
 				It("the EFA sgs are added to the launchTemplate", func() {

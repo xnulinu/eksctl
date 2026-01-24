@@ -143,8 +143,31 @@ func (c *ClusterConfig) validateRemoteNetworkingConfig() error {
 	return nil
 }
 
+// validateSupportType performs secure validation of the support type string
+func validateSupportType(supportType string) error {
+	// Security: Validate characters to prevent injection attacks
+	for _, r := range supportType {
+		if r < 32 || r == 127 { // Control characters
+			return fmt.Errorf("upgradePolicy.supportType contains invalid control characters")
+		}
+	}
+	// Validate against allowed values
+	if supportType != SupportTypeStandard && supportType != SupportTypeExtended {
+		return fmt.Errorf("upgradePolicy.supportType must be either %q or %q", SupportTypeStandard, SupportTypeExtended)
+	}
+	return nil
+}
+
 // ValidateClusterConfig checks compatible fields of a given ClusterConfig
 func ValidateClusterConfig(cfg *ClusterConfig) error {
+	if cfg.UpgradePolicy != nil {
+		if cfg.UpgradePolicy.SupportType != "" {
+			if err := validateSupportType(cfg.UpgradePolicy.SupportType); err != nil {
+				return err
+			}
+		}
+	}
+
 	if IsDisabled(cfg.IAM.WithOIDC) && len(cfg.IAM.ServiceAccounts) > 0 {
 		return fmt.Errorf("iam.withOIDC must be enabled explicitly for iam.serviceAccounts to be created")
 	}
@@ -664,7 +687,7 @@ func (c *ClusterConfig) validateKubernetesNetworkConfig() error {
 
 // NoAccess returns true if neither public are private cluster endpoint access is enabled and false otherwise
 func noAccess(ces *ClusterEndpoints) bool {
-	return !(IsEnabled(ces.PublicAccess) || IsEnabled(ces.PrivateAccess))
+	return !IsEnabled(ces.PublicAccess) && !IsEnabled(ces.PrivateAccess)
 }
 
 // PrivateOnly returns true if public cluster endpoint access is disabled and private cluster endpoint access is enabled, and false otherwise
@@ -734,8 +757,8 @@ func validateNodeGroupBase(np NodePool, path string, controlPlaneOnOutposts bool
 			}
 			return fmt.Errorf("AMI Family %s is not supported - use one of: %s", ng.AMIFamily, strings.Join(SupportedAMIFamilies(), ", "))
 		}
-		if controlPlaneOnOutposts && ng.AMIFamily != NodeImageFamilyAmazonLinux2 {
-			return fmt.Errorf("only %s is supported on local clusters", NodeImageFamilyAmazonLinux2)
+		if controlPlaneOnOutposts && (ng.AMIFamily != NodeImageFamilyAmazonLinux2 && ng.AMIFamily != NodeImageFamilyAmazonLinux2023) {
+			return fmt.Errorf("only %s and %s is supported on local clusters", NodeImageFamilyAmazonLinux2, NodeImageFamilyAmazonLinux2023)
 		}
 	}
 
@@ -817,18 +840,18 @@ func validateNodeGroupBase(np NodePool, path string, controlPlaneOnOutposts bool
 func validateVolumeOpts(ng *NodeGroupBase, path string, controlPlaneOnOutposts bool) error {
 	if ng.VolumeType != nil {
 		volumeType := *ng.VolumeType
-		if ng.VolumeIOPS != nil && !(volumeType == NodeVolumeTypeIO1 || volumeType == NodeVolumeTypeIO2 || volumeType == NodeVolumeTypeGP3) {
+		if ng.VolumeIOPS != nil && volumeType != NodeVolumeTypeIO1 && volumeType != NodeVolumeTypeIO2 && volumeType != NodeVolumeTypeGP3 {
 			return fmt.Errorf("%s.volumeIOPS is only supported for %s, %s and %s volume types", path, NodeVolumeTypeIO1, NodeVolumeTypeIO2, NodeVolumeTypeGP3)
 		}
 
 		if volumeType == NodeVolumeTypeIO1 {
-			if ng.VolumeIOPS != nil && !(*ng.VolumeIOPS >= MinIO1Iops && *ng.VolumeIOPS <= MaxIO1Iops) {
+			if ng.VolumeIOPS != nil && (*ng.VolumeIOPS < MinIO1Iops || *ng.VolumeIOPS > MaxIO1Iops) {
 				return fmt.Errorf("value for %s.volumeIOPS must be within range %d-%d", path, MinIO1Iops, MaxIO1Iops)
 			}
 		}
 
 		if volumeType == NodeVolumeTypeIO2 {
-			if ng.VolumeIOPS != nil && !(*ng.VolumeIOPS >= MinIO2Iops && *ng.VolumeIOPS <= MaxIO2Iops) {
+			if ng.VolumeIOPS != nil && (*ng.VolumeIOPS < MinIO2Iops || *ng.VolumeIOPS > MaxIO2Iops) {
 				return fmt.Errorf("value for %s.volumeIOPS must be within range %d-%d", path, MinIO2Iops, MaxIO2Iops)
 			}
 		}
@@ -843,11 +866,11 @@ func validateVolumeOpts(ng *NodeGroupBase, path string, controlPlaneOnOutposts b
 	}
 
 	if ng.VolumeType == nil || *ng.VolumeType == NodeVolumeTypeGP3 {
-		if ng.VolumeIOPS != nil && !(*ng.VolumeIOPS >= MinGP3Iops && *ng.VolumeIOPS <= MaxGP3Iops) {
+		if ng.VolumeIOPS != nil && (*ng.VolumeIOPS < MinGP3Iops || *ng.VolumeIOPS > MaxGP3Iops) {
 			return fmt.Errorf("value for %s.volumeIOPS must be within range %d-%d", path, MinGP3Iops, MaxGP3Iops)
 		}
 
-		if ng.VolumeThroughput != nil && !(*ng.VolumeThroughput >= MinThroughput && *ng.VolumeThroughput <= MaxThroughput) {
+		if ng.VolumeThroughput != nil && (*ng.VolumeThroughput < MinThroughput || *ng.VolumeThroughput > MaxThroughput) {
 			return fmt.Errorf("value for %s.volumeThroughput must be within range %d-%d", path, MinThroughput, MaxThroughput)
 		}
 	}
@@ -1651,7 +1674,9 @@ func IsWindowsImage(imageFamily string) bool {
 	case NodeImageFamilyWindowsServer2019CoreContainer,
 		NodeImageFamilyWindowsServer2019FullContainer,
 		NodeImageFamilyWindowsServer2022CoreContainer,
-		NodeImageFamilyWindowsServer2022FullContainer:
+		NodeImageFamilyWindowsServer2022FullContainer,
+		NodeImageFamilyWindowsServer2025CoreContainer,
+		NodeImageFamilyWindowsServer2025FullContainer:
 		return true
 
 	default:

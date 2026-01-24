@@ -7,6 +7,7 @@ import (
 	"errors"
 	"reflect"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
@@ -79,9 +80,37 @@ var _ = Describe("Cluster Template Builder", func() {
 			Expect(controlPlane.ResourcesVpcConfig.SubnetIDs).To(HaveLen(4))
 			Expect(controlPlane.RoleArn).To(ContainElement([]interface{}{"ServiceRole", "Arn"}))
 			Expect(controlPlane.EncryptionConfig).To(BeNil())
+			Expect(controlPlane.UpgradePolicy).To(BeNil())
+			Expect(controlPlane.ControlPlaneScalingConfig).To(BeNil())
 			Expect(controlPlane.KubernetesNetworkConfig.ServiceIPv4CIDR).To(Equal("131.10.55.70/18"))
 			Expect(controlPlane.KubernetesNetworkConfig.IPFamily).To(Equal("ipv4"))
 			Expect(controlPlane.AccessConfig.BootstrapClusterCreatorAdminPermissions).To(BeTrue())
+		})
+
+		Context("when UpgradePolicy is set with SupportType", func() {
+			BeforeEach(func() {
+				cfg.UpgradePolicy = &api.UpgradePolicy{
+					SupportType: api.SupportTypeStandard,
+				}
+			})
+
+			It("should include UpgradePolicy with SupportType in control plane resources", func() {
+				Expect(clusterTemplate.Resources["ControlPlane"].Properties.UpgradePolicy).NotTo(BeNil())
+				Expect(clusterTemplate.Resources["ControlPlane"].Properties.UpgradePolicy.SupportType).To(Equal(api.SupportTypeStandard))
+			})
+		})
+
+		Context("when control plane tier is set with SupportType", func() {
+			BeforeEach(func() {
+				cfg.ControlPlaneScalingConfig = &api.ControlPlaneScalingConfig{
+					Tier: aws.String("tier-xl"),
+				}
+			})
+
+			It("should include UpgradePolicy with SupportType in control plane resources", func() {
+				Expect(clusterTemplate.Resources["ControlPlane"].Properties.ControlPlaneScalingConfig).NotTo(BeNil())
+				Expect(clusterTemplate.Resources["ControlPlane"].Properties.ControlPlaneScalingConfig.Tier).To(Equal("tier-xl"))
+			})
 		})
 
 		It("should add vpc resources", func() {
@@ -177,6 +206,75 @@ var _ = Describe("Cluster Template Builder", func() {
 			Expect(clusterTemplate.Resources).NotTo(HaveKey("IngressDefaultClusterToNodeSG"))
 			Expect(clusterTemplate.Resources).NotTo(HaveKey("IngressNodeToDefaultClusterSG"))
 			Expect(clusterTemplate.Resources).To(HaveKey("ClusterSharedNodeSecurityGroup"))
+		})
+
+		Context("when Karpenter is enabled and karpenter.sh/discovery tag is in metadata", func() {
+			BeforeEach(func() {
+				cfg.Karpenter = &api.Karpenter{
+					Version: "v0.20.0",
+				}
+				cfg.Metadata.Tags = map[string]string{
+					"karpenter.sh/discovery": "my-cluster",
+					"environment":            "test",
+				}
+			})
+
+			It("should add karpenter.sh/discovery tags to ClusterSharedNodeSecurityGroup", func() {
+				Expect(clusterTemplate.Resources).To(HaveKey("ClusterSharedNodeSecurityGroup"))
+				sharedNodeSG := clusterTemplate.Resources["ClusterSharedNodeSecurityGroup"]
+				Expect(sharedNodeSG.Properties.Tags).To(HaveLen(2)) // Name tag + karpenter.sh/discovery tag
+
+				// Find the karpenter.sh/discovery tag
+				var karpenterTag *fakes.Tag
+				for i := range sharedNodeSG.Properties.Tags {
+					if sharedNodeSG.Properties.Tags[i].Key == "karpenter.sh/discovery" {
+						karpenterTag = &sharedNodeSG.Properties.Tags[i]
+						break
+					}
+				}
+				Expect(karpenterTag).NotTo(BeNil())
+				Expect(karpenterTag.Key).To(Equal("karpenter.sh/discovery"))
+				Expect(karpenterTag.Value).To(Equal("my-cluster"))
+			})
+		})
+
+		Context("when only Karpenter is enabled (no metadata tag)", func() {
+			BeforeEach(func() {
+				cfg.Karpenter = &api.Karpenter{
+					Version: "v0.20.0",
+				}
+			})
+
+			It("should NOT add karpenter.sh/discovery tags to ClusterSharedNodeSecurityGroup", func() {
+				Expect(clusterTemplate.Resources).To(HaveKey("ClusterSharedNodeSecurityGroup"))
+				sharedNodeSG := clusterTemplate.Resources["ClusterSharedNodeSecurityGroup"]
+				Expect(sharedNodeSG.Properties.Tags).To(HaveLen(1)) // Only Name tag
+				Expect(sharedNodeSG.Properties.Tags[0].Key).To(Equal("Name"))
+			})
+		})
+
+		Context("when only karpenter.sh/discovery tag is in metadata (no Karpenter)", func() {
+			BeforeEach(func() {
+				cfg.Metadata.Tags = map[string]string{
+					"karpenter.sh/discovery": "my-cluster",
+				}
+			})
+
+			It("should NOT add karpenter.sh/discovery tags to ClusterSharedNodeSecurityGroup", func() {
+				Expect(clusterTemplate.Resources).To(HaveKey("ClusterSharedNodeSecurityGroup"))
+				sharedNodeSG := clusterTemplate.Resources["ClusterSharedNodeSecurityGroup"]
+				Expect(sharedNodeSG.Properties.Tags).To(HaveLen(1)) // Only Name tag
+				Expect(sharedNodeSG.Properties.Tags[0].Key).To(Equal("Name"))
+			})
+		})
+
+		Context("when neither Karpenter nor karpenter.sh/discovery tag is present", func() {
+			It("should NOT add karpenter.sh/discovery tags to ClusterSharedNodeSecurityGroup", func() {
+				Expect(clusterTemplate.Resources).To(HaveKey("ClusterSharedNodeSecurityGroup"))
+				sharedNodeSG := clusterTemplate.Resources["ClusterSharedNodeSecurityGroup"]
+				Expect(sharedNodeSG.Properties.Tags).To(HaveLen(1)) // Only Name tag
+				Expect(sharedNodeSG.Properties.Tags[0].Key).To(Equal("Name"))
+			})
 		})
 
 		Context("when extraCIDRs are defined", func() {

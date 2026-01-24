@@ -85,6 +85,10 @@ var _ = Describe("Update", func() {
 						{
 							AddonVersion: aws.String("v1.0.0-eksbuild.2"),
 						},
+						{
+							// This version would be incorrectly selected by old logic when user requests v1.0.0-eksbuild.2
+							AddonVersion: aws.String("v1.0.0-eksbuild.20"),
+						},
 					},
 				},
 			},
@@ -202,6 +206,61 @@ var _ = Describe("Update", func() {
 					}, &podIdentityIAMUpdater, 0)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(ContainSubstring("no version(s) found matching \"1.7.8\" for \"my-addon\"")))
+				})
+			})
+
+			When("the version selection prioritizes exact matches", func() {
+				It("should select exact match v1.0.0-eksbuild.2 over partial match v1.0.0-eksbuild.20", func() {
+					// This test demonstrates the fix for the version selection bug
+					// where strings.Contains("v1.0.0-eksbuild.20", "v1.0.0-eksbuild.2") returns true
+					// causing the wrong version to be selected
+					err := addonManager.Update(context.Background(), &api.Addon{
+						Name:    "my-addon",
+						Version: "v1.0.0-eksbuild.2", // User requests exact version
+					}, &podIdentityIAMUpdater, 0)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(*describeAddonInput.ClusterName).To(Equal("my-cluster"))
+					Expect(*describeAddonInput.AddonName).To(Equal("my-addon"))
+					Expect(*updateAddonInput.ClusterName).To(Equal("my-cluster"))
+					Expect(*updateAddonInput.AddonName).To(Equal("my-addon"))
+					// The key assertion: should select exact match, not v1.0.0-eksbuild.20
+					Expect(*updateAddonInput.AddonVersion).To(Equal("v1.0.0-eksbuild.2"))
+					Expect(*updateAddonInput.ServiceAccountRoleArn).To(Equal("original-arn"))
+				})
+
+				It("should select exact match v1.0.0-eksbuild.20 when specifically requested", func() {
+					// This test ensures that v1.0.0-eksbuild.20 can still be selected when explicitly requested
+					err := addonManager.Update(context.Background(), &api.Addon{
+						Name:    "my-addon",
+						Version: "v1.0.0-eksbuild.20", // User requests this specific version
+					}, &podIdentityIAMUpdater, 0)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(*describeAddonInput.ClusterName).To(Equal("my-cluster"))
+					Expect(*describeAddonInput.AddonName).To(Equal("my-addon"))
+					Expect(*updateAddonInput.ClusterName).To(Equal("my-cluster"))
+					Expect(*updateAddonInput.AddonName).To(Equal("my-addon"))
+					// Should select the exact version requested
+					Expect(*updateAddonInput.AddonVersion).To(Equal("v1.0.0-eksbuild.20"))
+					Expect(*updateAddonInput.ServiceAccountRoleArn).To(Equal("original-arn"))
+				})
+
+				It("should still support partial matching when no exact match exists", func() {
+					// This test ensures partial matching still works for legitimate use cases
+					err := addonManager.Update(context.Background(), &api.Addon{
+						Name:    "my-addon",
+						Version: "v1.0.0-eksbuild", // Partial match - should find highest matching version
+					}, &podIdentityIAMUpdater, 0)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(*describeAddonInput.ClusterName).To(Equal("my-cluster"))
+					Expect(*describeAddonInput.AddonName).To(Equal("my-addon"))
+					Expect(*updateAddonInput.ClusterName).To(Equal("my-cluster"))
+					Expect(*updateAddonInput.AddonName).To(Equal("my-addon"))
+					// Should select the highest version among partial matches (v1.0.0-eksbuild.20)
+					Expect(*updateAddonInput.AddonVersion).To(Equal("v1.0.0-eksbuild.20"))
+					Expect(*updateAddonInput.ServiceAccountRoleArn).To(Equal("original-arn"))
 				})
 			})
 		})
@@ -636,7 +695,7 @@ var _ = Describe("Update", func() {
 
 		addonManager, err := addon.New(&api.ClusterConfig{
 			Metadata: &api.ClusterMeta{
-				Version: api.Version1_32,
+				Version: api.DefaultVersion,
 				Name:    clusterName,
 			},
 			AddonsConfig: e.addonsConfig,
@@ -684,4 +743,90 @@ var _ = Describe("Update", func() {
 			},
 		}),
 	)
+
+})
+
+var _ = Describe("Update - Namespace Config Updates", func() {
+	var (
+		addonManager     *addon.Manager
+		mockProvider     *mockprovider.MockProvider
+		updateAddonInput *awseks.UpdateAddonInput
+		fakeStackManager *fakes.FakeStackManager
+	)
+
+	makeOIDCManager := func() *iamoidc.OpenIDConnectManager {
+		oidc, err := iamoidc.NewOpenIDConnectManager(nil, "456123987123", "https://oidc.eks.us-west-2.amazonaws.com/id/A39A2842863C47208955D753DE205E6E", "aws", nil)
+		Expect(err).NotTo(HaveOccurred())
+		oidc.ProviderARN = "arn:aws:iam::456123987123:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/A39A2842863C47208955D753DE205E6E"
+		return oidc
+	}
+
+	BeforeEach(func() {
+		var err error
+		mockProvider = mockprovider.NewMockProvider()
+		fakeStackManager = new(fakes.FakeStackManager)
+
+		oidc := makeOIDCManager()
+
+		mockProvider.MockEKS().On("DescribeAddonVersions", mock.Anything, mock.Anything).Return(&awseks.DescribeAddonVersionsOutput{
+			Addons: []ekstypes.AddonInfo{
+				{
+					AddonName: aws.String("my-addon"),
+					Type:      aws.String("type"),
+					AddonVersions: []ekstypes.AddonVersionInfo{
+						{
+							AddonVersion: aws.String("v1.0.0-eksbuild.2"),
+						},
+					},
+				},
+			},
+		}, nil)
+
+		addonManager, err = addon.New(&api.ClusterConfig{Metadata: &api.ClusterMeta{
+			Version: "1.18",
+			Name:    "my-cluster",
+		}}, mockProvider.EKS(), fakeStackManager, true, oidc, nil)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	Context("namespace config updates", func() {
+		var podIdentityIAMUpdater mocks.PodIdentityIAMUpdater
+
+		When("updating addon with different namespace config", func() {
+			It("succeeds without validation error", func() {
+				// Mock DescribeAddon to return an addon with existing namespace config
+				mockProvider.MockEKS().On("DescribeAddon", mock.Anything, mock.Anything).Return(&awseks.DescribeAddonOutput{
+					Addon: &ekstypes.Addon{
+						AddonName:             aws.String("my-addon"),
+						AddonVersion:          aws.String("v1.0.0-eksbuild.2"),
+						ServiceAccountRoleArn: aws.String("original-arn"),
+						Status:                "created",
+						NamespaceConfig: &ekstypes.AddonNamespaceConfigResponse{
+							Namespace: aws.String("existing-namespace"),
+						},
+					},
+				}, nil).Once()
+
+				mockProvider.MockEKS().On("UpdateAddon", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+					Expect(args).To(HaveLen(2))
+					Expect(args[1]).To(BeAssignableToTypeOf(&awseks.UpdateAddonInput{}))
+					updateAddonInput = args[1].(*awseks.UpdateAddonInput)
+				}).Return(&awseks.UpdateAddonOutput{}, nil).Once()
+
+				err := addonManager.Update(context.Background(), &api.Addon{
+					Name:    "my-addon",
+					Version: "v1.0.0-eksbuild.2",
+					NamespaceConfig: &api.AddonNamespaceConfig{
+						Namespace: "new-namespace",
+					},
+				}, &podIdentityIAMUpdater, 0)
+
+				// Should succeed without namespace config immutability error
+				Expect(err).NotTo(HaveOccurred())
+				Expect(*updateAddonInput.ClusterName).To(Equal("my-cluster"))
+				Expect(*updateAddonInput.AddonName).To(Equal("my-addon"))
+				Expect(*updateAddonInput.AddonVersion).To(Equal("v1.0.0-eksbuild.2"))
+			})
+		})
+	})
 })

@@ -199,12 +199,13 @@ var _ = Describe("Outposts validation", func() {
 			},
 		}, clusterConfig)
 		if shouldFail {
-			Expect(err).To(MatchError("only AmazonLinux2 is supported on local clusters"))
+			Expect(err).To(MatchError("only AmazonLinux2 and AmazonLinux2023 is supported on local clusters"))
 		} else {
 			Expect(err).NotTo(HaveOccurred())
 		}
 	},
 		Entry("AmazonLinux2", api.NodeImageFamilyAmazonLinux2, false),
+		Entry("AmazonLinux2023", api.NodeImageFamilyAmazonLinux2, false),
 		Entry("Bottlerocket", api.NodeImageFamilyBottlerocket, true),
 		Entry("Ubuntu2004", api.NodeImageFamilyUbuntu2004, true),
 		Entry("UbuntuPro2004", api.NodeImageFamilyUbuntuPro2004, true),
@@ -216,6 +217,8 @@ var _ = Describe("Outposts validation", func() {
 		Entry("Windows2019Full", api.NodeImageFamilyWindowsServer2019FullContainer, true),
 		Entry("Windows2022Core", api.NodeImageFamilyWindowsServer2022CoreContainer, true),
 		Entry("Windows2022Full", api.NodeImageFamilyWindowsServer2022FullContainer, true),
+		Entry("Windows2025Core", api.NodeImageFamilyWindowsServer2025CoreContainer, true),
+		Entry("Windows2025Full", api.NodeImageFamilyWindowsServer2025FullContainer, true),
 	)
 
 	type nodeGroupEntry struct {
