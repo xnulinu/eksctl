@@ -1035,6 +1035,14 @@ var _ = Describe("ClusterConfig validation", func() {
 			},
 			expectedErr: "remoteNetworkConfig.remoteNodeNetworks must be set and non-empty",
 		}),
+		Entry("remoteNodeNetworks is empty with nil remotePodNetworks", remoteNetworkConfigEntry{
+			overrideConfig: func(cc *api.ClusterConfig) {
+				cc.RemoteNetworkConfig = &api.RemoteNetworkConfig{
+					RemoteNodeNetworks: []*api.RemoteNetwork{},
+				}
+			},
+			expectedErr: "remoteNetworkConfig.remoteNodeNetworks must be set and non-empty",
+		}),
 		Entry("both vpcGatewayID and pre-existing VPC are set", remoteNetworkConfigEntry{
 			overrideConfig: func(cc *api.ClusterConfig) {
 				cc.VPC.ID = "vpc-1234"
@@ -1065,6 +1073,18 @@ var _ = Describe("ClusterConfig validation", func() {
 			expectedErr: "remoteNetworkConfig.iam.caBundleCert is required when using IAMRolesAnywhere credentials provider",
 		}),
 	)
+
+	It("should allow both remoteNodeNetworks and remotePodNetworks to be empty for updates", func() {
+		cfg := api.NewClusterConfig()
+		api.SetClusterConfigDefaults(cfg)
+		api.SetClusterEndpointAccessDefaults(cfg.VPC)
+		cfg.RemoteNetworkConfig = &api.RemoteNetworkConfig{
+			RemoteNodeNetworks: []*api.RemoteNetwork{},
+			RemotePodNetworks:  []*api.RemoteNetwork{},
+		}
+		err := api.ValidateClusterConfig(cfg)
+		Expect(err).NotTo(HaveOccurred())
+	})
 
 	Describe("network config", func() {
 		var (
@@ -2786,6 +2806,76 @@ var _ = Describe("ClusterConfig validation", func() {
 			{
 				Name:                  api.VPCCNIAddon,
 				ServiceAccountRoleARN: "role-1",
+			},
+		}, ""),
+		Entry("permissionPolicyName without permissionPolicy", []*api.Addon{
+			{
+				Name: api.VPCCNIAddon,
+				PodIdentityAssociations: &[]api.PodIdentityAssociation{
+					{
+						ServiceAccountName:   "aws-node",
+						PermissionPolicyName: "my-policy",
+					},
+				},
+			},
+		}, "permissionPolicyName requires permissionPolicy to be set"),
+		Entry("permissionPolicyName with only special characters", []*api.Addon{
+			{
+				Name: api.VPCCNIAddon,
+				PodIdentityAssociations: &[]api.PodIdentityAssociation{
+					{
+						ServiceAccountName:   "aws-node",
+						PermissionPolicyName: "---!!!",
+						PermissionPolicy:     api.InlineDocument{"Version": "2012-10-17"},
+					},
+				},
+			},
+		}, `permissionPolicyName "---!!!" must contain at least one alphanumeric character`),
+		Entry("valid permissionPolicyName with permissionPolicy", []*api.Addon{
+			{
+				Name: api.VPCCNIAddon,
+				PodIdentityAssociations: &[]api.PodIdentityAssociation{
+					{
+						ServiceAccountName:   "aws-node",
+						PermissionPolicyName: "my-policy",
+						PermissionPolicy:     api.InlineDocument{"Version": "2012-10-17"},
+					},
+				},
+			},
+		}, ""),
+	)
+
+	DescribeTable("iam pod identity association permissionPolicyName", func(pias []api.PodIdentityAssociation, expectedErr string) {
+		clusterConfig := api.NewClusterConfig()
+		clusterConfig.IAM.PodIdentityAssociations = pias
+		err := api.ValidateClusterConfig(clusterConfig)
+		if expectedErr != "" {
+			Expect(err).To(MatchError(ContainSubstring(expectedErr)))
+		} else {
+			Expect(err).NotTo(HaveOccurred())
+		}
+	},
+		Entry("permissionPolicyName without permissionPolicy", []api.PodIdentityAssociation{
+			{
+				Namespace:            "kube-system",
+				ServiceAccountName:   "aws-node",
+				PermissionPolicyName: "my-policy",
+			},
+		}, "permissionPolicyName requires permissionPolicy to be set"),
+		Entry("permissionPolicyName with only special characters", []api.PodIdentityAssociation{
+			{
+				Namespace:            "kube-system",
+				ServiceAccountName:   "aws-node",
+				PermissionPolicyName: "---!!!",
+				PermissionPolicy:     api.InlineDocument{"Version": "2012-10-17"},
+			},
+		}, `permissionPolicyName "---!!!" must contain at least one alphanumeric character`),
+		Entry("valid permissionPolicyName", []api.PodIdentityAssociation{
+			{
+				Namespace:            "kube-system",
+				ServiceAccountName:   "aws-node",
+				PermissionPolicyName: "my-policy",
+				PermissionPolicy:     api.InlineDocument{"Version": "2012-10-17"},
 			},
 		}, ""),
 	)

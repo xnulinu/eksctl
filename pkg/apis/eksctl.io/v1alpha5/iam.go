@@ -193,6 +193,9 @@ type PodIdentityAssociation struct {
 	PermissionPolicyARNs []string `json:"permissionPolicyARNs,omitempty"`
 
 	// +optional
+	PermissionPolicyName string `json:"permissionPolicyName,omitempty"`
+
+	// +optional
 	PermissionPolicy InlineDocument `json:"permissionPolicy,omitempty"`
 
 	// +optional
@@ -209,6 +212,10 @@ type PodIdentityAssociation struct {
 	// +optional
 	// DisableSessionTags disables the tags that are automatically added to role session by Amazon EKS.
 	DisableSessionTags *bool `json:"disableSessionTags,omitempty"`
+
+	// +optional
+	// Policy is the optional policy that applies additional restrictions to this pod identity association beyond the IAM policies attached to the IAM role.
+	Policy *string `json:"policy,omitempty"`
 }
 
 func (p PodIdentityAssociation) NameString() string {
