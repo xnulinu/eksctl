@@ -332,6 +332,9 @@ func (c *ClusterResourceSet) addResourcesForControlPlane(subnetDetails *SubnetDe
 		SecurityGroupIds:      c.securityGroups,
 		PublicAccessCidrs:     gfnt.NewStringSlice(c.spec.VPC.PublicAccessCIDRs...),
 	}
+	if c.spec.VPC.ControlPlaneEgressMode != "" {
+		clusterVPC.ControlPlaneEgressMode = gfnt.NewString(c.spec.VPC.ControlPlaneEgressMode)
+	}
 	if subnetIDs := c.spec.VPC.ControlPlaneSubnetIDs; len(subnetIDs) > 0 {
 		clusterVPC.SubnetIds = gfnt.NewStringSlice(subnetIDs...)
 	} else {
@@ -421,6 +424,22 @@ func (c *ClusterResourceSet) addResourcesForControlPlane(subnetDetails *SubnetDe
 		if c.spec.Outpost.HasPlacementGroup() {
 			cluster.OutpostConfig.ControlPlanePlacement = &gfneks.Cluster_ControlPlanePlacement{
 				GroupName: gfnt.NewString(c.spec.Outpost.ControlPlanePlacement.GroupName),
+			}
+			if c.spec.Outpost.ControlPlanePlacement.SpreadLevel != "" {
+				cluster.OutpostConfig.ControlPlanePlacement.SpreadLevel = gfnt.NewString(c.spec.Outpost.ControlPlanePlacement.SpreadLevel)
+			}
+		} else if c.spec.Outpost.ControlPlanePlacement != nil && c.spec.Outpost.ControlPlanePlacement.SpreadLevel != "" {
+			cluster.OutpostConfig.ControlPlanePlacement = &gfneks.Cluster_ControlPlanePlacement{
+				SpreadLevel: gfnt.NewString(c.spec.Outpost.ControlPlanePlacement.SpreadLevel),
+			}
+		}
+		if c.spec.Outpost.EtcdInstanceType != "" {
+			cluster.OutpostConfig.EtcdInstanceType = gfnt.NewString(c.spec.Outpost.EtcdInstanceType)
+		}
+		if c.spec.Outpost.EtcdPlacement != nil {
+			cluster.OutpostConfig.EtcdPlacement = &gfneks.Cluster_EtcdPlacement{}
+			if c.spec.Outpost.EtcdPlacement.SpreadLevel != "" {
+				cluster.OutpostConfig.EtcdPlacement.SpreadLevel = gfnt.NewString(c.spec.Outpost.EtcdPlacement.SpreadLevel)
 			}
 		}
 	}
