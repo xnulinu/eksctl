@@ -22,6 +22,7 @@ import (
 	"github.com/weaveworks/eksctl/pkg/cfn/builder"
 	"github.com/weaveworks/eksctl/pkg/cfn/builder/fakes"
 	"github.com/weaveworks/eksctl/pkg/testutils/mockprovider"
+	"github.com/weaveworks/eksctl/pkg/vpc"
 )
 
 var _ = Describe("Cluster Template Builder", func() {
@@ -100,6 +101,67 @@ var _ = Describe("Cluster Template Builder", func() {
 			})
 		})
 
+		Context("when VPC.ControlPlaneOnPrivateSubnets is true", func() {
+			BeforeEach(func() {
+				cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+			})
+
+			It("should add only the private subnets to the control plane's VPC config", func() {
+				subnetIDs := clusterTemplate.Resources["ControlPlane"].Properties.ResourcesVpcConfig.SubnetIDs
+				Expect(subnetIDs).To(ConsistOf(
+					map[string]interface{}{"Ref": "SubnetPrivateUSWEST2A"},
+					map[string]interface{}{"Ref": "SubnetPrivateUSWEST2B"},
+				))
+			})
+
+			Context("and ControlPlaneSubnetIDs is also set", func() {
+				BeforeEach(func() {
+					cfg.VPC.ControlPlaneSubnetIDs = []string{"subnet-1234", "subnet-5678"}
+				})
+
+				It("should give ControlPlaneSubnetIDs precedence in the template", func() {
+					subnetIDs := clusterTemplate.Resources["ControlPlane"].Properties.ResourcesVpcConfig.SubnetIDs
+					Expect(subnetIDs).To(ConsistOf("subnet-1234", "subnet-5678"))
+				})
+			})
+		})
+
+		Context("when VPC.ControlPlaneOnPrivateSubnets is not set", func() {
+			It("should add both public and private subnets to the control plane's VPC config", func() {
+				subnetIDs := clusterTemplate.Resources["ControlPlane"].Properties.ResourcesVpcConfig.SubnetIDs
+				Expect(subnetIDs).To(ConsistOf(
+					map[string]interface{}{"Ref": "SubnetPublicUSWEST2A"},
+					map[string]interface{}{"Ref": "SubnetPublicUSWEST2B"},
+					map[string]interface{}{"Ref": "SubnetPrivateUSWEST2A"},
+					map[string]interface{}{"Ref": "SubnetPrivateUSWEST2B"},
+				))
+			})
+		})
+
+		Context("when subnets are derived from availabilityZones by vpc.SetSubnets", func() {
+			BeforeEach(func() {
+				// This is the primary path: the user supplies only availabilityZones and
+				// eksctl creates the VPC and subnets.
+				cfg.VPC = api.NewClusterVPC(false)
+				cfg.VPC.ClusterEndpoints = api.ClusterEndpointAccessDefaults()
+				cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+				Expect(vpc.SetSubnets(cfg.VPC, cfg.AvailabilityZones, nil)).To(Succeed())
+			})
+
+			It("should add only the generated private subnets to the control plane's VPC config", func() {
+				Expect(addErr).NotTo(HaveOccurred())
+				subnetIDs := clusterTemplate.Resources["ControlPlane"].Properties.ResourcesVpcConfig.SubnetIDs
+				Expect(subnetIDs).To(ConsistOf(
+					map[string]interface{}{"Ref": "SubnetPrivateUSWEST2A"},
+					map[string]interface{}{"Ref": "SubnetPrivateUSWEST2B"},
+				))
+
+				By("still creating the public subnets for NAT and load balancers")
+				Expect(clusterTemplate.Resources).To(HaveKey("SubnetPublicUSWEST2A"))
+				Expect(clusterTemplate.Resources).To(HaveKey("SubnetPublicUSWEST2B"))
+			})
+		})
+
 		Context("when control plane tier is set with SupportType", func() {
 			BeforeEach(func() {
 				cfg.ControlPlaneScalingConfig = &api.ControlPlaneScalingConfig{
@@ -110,6 +172,77 @@ var _ = Describe("Cluster Template Builder", func() {
 			It("should include UpgradePolicy with SupportType in control plane resources", func() {
 				Expect(clusterTemplate.Resources["ControlPlane"].Properties.ControlPlaneScalingConfig).NotTo(BeNil())
 				Expect(clusterTemplate.Resources["ControlPlane"].Properties.ControlPlaneScalingConfig.Tier).To(Equal("tier-xl"))
+			})
+		})
+
+		Context("when no control plane component config is set", func() {
+			It("should not include any component config in control plane resources", func() {
+				controlPlane := clusterTemplate.Resources["ControlPlane"].Properties
+				Expect(controlPlane.KubeApiServerConfig).To(BeNil())
+				Expect(controlPlane.KubeSchedulerConfig).To(BeNil())
+				Expect(controlPlane.KubeControllerManagerConfig).To(BeNil())
+			})
+		})
+
+		Context("when kubeAPIServerConfig is set", func() {
+			BeforeEach(func() {
+				cfg.KubeAPIServerConfig = &api.KubeAPIServerConfig{
+					EventTTL: aws.String("30m"),
+					ServiceNodePortRange: &api.ServiceNodePortRange{
+						MinPort: aws.Int(30000),
+						MaxPort: aws.Int(32767),
+					},
+				}
+			})
+
+			It("should include KubeApiServerConfig in control plane resources", func() {
+				kubeAPIServerConfig := clusterTemplate.Resources["ControlPlane"].Properties.KubeApiServerConfig
+				Expect(kubeAPIServerConfig).NotTo(BeNil())
+				Expect(kubeAPIServerConfig.EventTtl).To(Equal("30m"))
+				Expect(kubeAPIServerConfig.ServiceNodePortRange).NotTo(BeNil())
+				Expect(kubeAPIServerConfig.ServiceNodePortRange.MinPort).To(Equal(30000))
+				Expect(kubeAPIServerConfig.ServiceNodePortRange.MaxPort).To(Equal(32767))
+			})
+		})
+
+		Context("when kubeSchedulerConfig is set", func() {
+			BeforeEach(func() {
+				cfg.KubeSchedulerConfig = &api.KubeSchedulerConfig{
+					NodeResourcesFit: &api.NodeResourcesFitConfig{
+						ScoringStrategy: &api.ScoringStrategy{
+							Type: aws.String("MostAllocated"),
+							Resources: []api.ResourceWeight{
+								{Name: aws.String("cpu"), Weight: aws.Int(1)},
+								{Name: aws.String("memory"), Weight: aws.Int(1)},
+							},
+						},
+					},
+				}
+			})
+
+			It("should include KubeSchedulerConfig in control plane resources", func() {
+				scoringStrategy := clusterTemplate.Resources["ControlPlane"].Properties.KubeSchedulerConfig.NodeResourcesFit.ScoringStrategy
+				Expect(scoringStrategy).NotTo(BeNil())
+				Expect(scoringStrategy.Type).To(Equal("MostAllocated"))
+				Expect(scoringStrategy.Resources).To(HaveLen(2))
+				Expect(scoringStrategy.Resources[0].Name).To(Equal("cpu"))
+				Expect(scoringStrategy.Resources[0].Weight).To(Equal(1))
+			})
+		})
+
+		Context("when kubeControllerManagerConfig is set", func() {
+			BeforeEach(func() {
+				cfg.KubeControllerManagerConfig = &api.KubeControllerManagerConfig{
+					HorizontalPodAutoscalerControllerConfig: &api.HorizontalPodAutoscalerControllerConfig{
+						HorizontalPodAutoscalerSyncPeriod: aws.String("15s"),
+					},
+				}
+			})
+
+			It("should include KubeControllerManagerConfig in control plane resources", func() {
+				hpaConfig := clusterTemplate.Resources["ControlPlane"].Properties.KubeControllerManagerConfig.HorizontalPodAutoscalerControllerConfig
+				Expect(hpaConfig).NotTo(BeNil())
+				Expect(hpaConfig.HorizontalPodAutoscalerSyncPeriod).To(Equal("15s"))
 			})
 		})
 

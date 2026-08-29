@@ -1233,7 +1233,7 @@ var _ = Describe("ClusterConfig validation", func() {
 						}
 						cfg.Addons = append(cfg.Addons, &api.Addon{Name: api.KubeProxyAddon})
 						err = api.ValidateClusterConfig(cfg)
-						Expect(err).To(MatchError(ContainSubstring("the default core addons must be defined for IPv6; missing addon(s): vpc-cni, coredns")))
+						Expect(err).To(MatchError(ContainSubstring("the default core addons must be defined for IPv6; missing addon(s): coredns")))
 					})
 				})
 
@@ -1298,6 +1298,14 @@ var _ = Describe("ClusterConfig validation", func() {
 								err = api.ValidateClusterConfig(cfg)
 								Expect(err).To(MatchError(ContainSubstring("Set one of: addonsConfig.autoApplyPodIdentityAssociations, useDefaultPodIdentityAssociations on the vpc-cni addon, apply a custom pod identity on the vpc-cni addon")))
 							})
+						})
+					})
+
+					When("vpc-cni addon is not provided", func() {
+						It("accepts that setting", func() {
+							cfg.Addons = []*api.Addon{{Name: api.CoreDNSAddon}}
+							err = api.ValidateClusterConfig(cfg)
+							Expect(err).To(BeNil())
 						})
 					})
 				})
@@ -1522,6 +1530,142 @@ var _ = Describe("ClusterConfig validation", func() {
 					cfg.VPC.PublicAccessCIDRs = []string{"48.58.68/24"}
 					err = cfg.ValidateVPCConfig()
 					Expect(err).To(HaveOccurred())
+				})
+			})
+		})
+
+		Context("controlPlaneOnPrivateSubnets", func() {
+			privateSubnets := func(azs ...string) api.AZSubnetMapping {
+				m := api.NewAZSubnetMapping()
+				for i, az := range azs {
+					m.Set(fmt.Sprintf("subnet-alias-%d", i), api.AZSubnetSpec{
+						ID: fmt.Sprintf("subnet-%d", i),
+						AZ: az,
+					})
+				}
+				return m
+			}
+
+			When("it is enabled and eksctl creates the VPC with two distinct availability zones", func() {
+				It("does not reject the config, since subnets are derived from availabilityZones later", func() {
+					cfg.VPC.Subnets = nil
+					cfg.AvailabilityZones = []string{"us-west-2a", "us-west-2b"}
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					err = cfg.ValidateVPCConfig()
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			When("it is enabled and eksctl creates the VPC with a duplicated availability zone", func() {
+				It("returns an error, since the duplicate collapses into a single private subnet", func() {
+					cfg.VPC.Subnets = nil
+					cfg.AvailabilityZones = []string{"us-west-2a", "us-west-2a"}
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					err = cfg.ValidateVPCConfig()
+					Expect(err).To(MatchError("vpc.controlPlaneOnPrivateSubnets requires at least 2 distinct availability zones, got 1 ([us-west-2a us-west-2a])"))
+				})
+			})
+
+			When("it is enabled and eksctl creates the VPC without availability zones set", func() {
+				It("does not reject the config, since eksctl selects distinct zones itself later", func() {
+					cfg.VPC.Subnets = nil
+					cfg.AvailabilityZones = nil
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					err = cfg.ValidateVPCConfig()
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			When("it is enabled with two private subnets across two AZs", func() {
+				It("does not return an error", func() {
+					cfg.VPC.Subnets = &api.ClusterSubnets{
+						Private: privateSubnets("us-west-2a", "us-west-2b"),
+					}
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					err = cfg.ValidateVPCConfig()
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			When("it is enabled together with controlPlaneSubnetIDs", func() {
+				It("returns an error", func() {
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					cfg.VPC.ControlPlaneSubnetIDs = []string{"subnet-1234", "subnet-5678"}
+					err = cfg.ValidateVPCConfig()
+					Expect(err).To(MatchError("only one of vpc.controlPlaneSubnetIDs and vpc.controlPlaneOnPrivateSubnets can be specified"))
+				})
+			})
+
+			When("it is enabled but the VPC has no private subnets", func() {
+				It("returns an error instead of silently using public subnets", func() {
+					cfg.VPC.Subnets = &api.ClusterSubnets{
+						Public: privateSubnets("us-west-2a", "us-west-2b"),
+					}
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					err = cfg.ValidateVPCConfig()
+					Expect(err).To(MatchError("vpc.controlPlaneOnPrivateSubnets requires at least 2 private subnets, got 0"))
+				})
+			})
+
+			When("it is enabled with only one private subnet", func() {
+				It("returns an error", func() {
+					cfg.VPC.Subnets = &api.ClusterSubnets{
+						Private: privateSubnets("us-west-2a"),
+					}
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					err = cfg.ValidateVPCConfig()
+					Expect(err).To(MatchError("vpc.controlPlaneOnPrivateSubnets requires at least 2 private subnets, got 1"))
+				})
+			})
+
+			When("it is enabled with two private subnets in the same AZ", func() {
+				It("returns an error, since EKS requires two availability zones", func() {
+					cfg.VPC.Subnets = &api.ClusterSubnets{
+						Private: privateSubnets("us-west-2a", "us-west-2a"),
+					}
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					err = cfg.ValidateVPCConfig()
+					Expect(err).To(MatchError("vpc.controlPlaneOnPrivateSubnets requires private subnets in at least 2 availability zones, got 1 ([us-west-2a])"))
+				})
+			})
+
+			When("private subnets are given only by ID", func() {
+				It("allows the config through, since their zones are resolved from EC2 later", func() {
+					subnets := api.NewAZSubnetMapping()
+					subnets.Set("alias-a", api.AZSubnetSpec{ID: "subnet-aaa"})
+					subnets.Set("alias-b", api.AZSubnetSpec{ID: "subnet-bbb"})
+					cfg.VPC.ID = "vpc-123"
+					cfg.VPC.Subnets = &api.ClusterSubnets{Private: subnets}
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					err = cfg.ValidateVPCConfig()
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			When("one private subnet is keyed by AZ and another repeats that AZ explicitly", func() {
+				It("returns an error", func() {
+					subnets := api.NewAZSubnetMapping()
+					subnets.Set("us-west-2a", api.AZSubnetSpec{ID: "subnet-aaa"})
+					subnets.Set("alias-b", api.AZSubnetSpec{ID: "subnet-bbb", AZ: "us-west-2a"})
+					cfg.VPC.ID = "vpc-123"
+					cfg.VPC.Subnets = &api.ClusterSubnets{Private: subnets}
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					err = cfg.ValidateVPCConfig()
+					Expect(err).To(MatchError("vpc.controlPlaneOnPrivateSubnets requires private subnets in at least 2 availability zones, got 1 ([us-west-2a])"))
+				})
+			})
+
+			When("it is enabled on Outposts", func() {
+				It("does not enforce the multi-AZ requirement", func() {
+					cfg.VPC.Subnets = &api.ClusterSubnets{
+						Private: privateSubnets("us-west-2a"),
+					}
+					cfg.VPC.ControlPlaneOnPrivateSubnets = api.Enabled()
+					cfg.Outpost = &api.Outpost{
+						ControlPlaneOutpostARN: "arn:aws:outposts:us-west-2:1234:outpost/op-1234",
+					}
+					err = cfg.ValidateVPCConfig()
+					Expect(err).NotTo(HaveOccurred())
 				})
 			})
 		})
